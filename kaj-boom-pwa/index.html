@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>کاج‌بوم - مدیریت اقامتگاه</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="theme-color" content="#1B2340" />
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Vazirmatn','Tahoma','Segoe UI',sans-serif; background:#EFE3C8; }
+  button, input, select { font-family: inherit; }
+</style>
+
+<!-- React (no build step needed) -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+
+<!-- Firebase (free tier) for shared real-time data between devices -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+// ====== PASTE YOUR FIREBASE CONFIG HERE (see README.md) ======
+const firebaseConfig = {
+  apiKey: "AIzaSyBM2Eaflg8ORlAcm7DrsoX0XRXdvXQGPz8",
+  authDomain: "kaajboom-525fb.firebaseapp.com",
+  projectId: "kaajboom-525fb",
+  storageBucket: "kaajboom-525fb.firebasestorage.app",
+  messagingSenderId: "262477011707",
+  appId: "1:262477011707:web:8445508277928da19dae5e"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+
+// ---------- design tokens ----------
+const C = {
+  sand: "#EFE3C8", sandDark: "#DDC79E", card: "#F8F1DE", ink: "#2B2118", inkSoft: "#5C503E",
+  night: "#1B2340", nightSoft: "#2B3560", clay: "#B65C38", claySoft: "#D98A65",
+  pomegranate: "#8E2A3B", gold: "#C9A227", sage: "#6B7A57", sageSoft: "#8FA073",
+};
+const MONTHS = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"];
+const INCOME_SOURCES = ["اقامتگاه", "اجاره آپارتمان اصفهان", "فروشگاه صنایع‌دستی"];
+const EXPENSE_SCOPES = ["اقامتگاه", "زندگی شخصی"];
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+// ---------- Firestore-backed shared state ----------
+function useDoc(docId, initial) {
+  const [value, setValue] = useState(initial);
+  const [loaded, setLoaded] = useState(false);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    const ref = db.collection("kajboom").doc(docId);
+    const unsub = ref.onSnapshot(
+      (snap) => {
+        if (snap.exists) setValue(snap.data().value);
+        else ref.set({ value: initial }).catch(() => {});
+        setLoaded(true);
+      },
+      (e) => { setErr(String(e)); setLoaded(true); }
+    );
+    return unsub;
+  }, [docId]);
+  const update = (next) => {
+    const resolved = typeof next === "function" ? next(value) : next;
+    setValue(resolved);
+    db.collection("kajboom").doc(docId).set({ value: resolved }).catch((e) => setErr(String(e)));
+  };
+  return [value, update, loaded, err];
+}
+
+// ---------- tiny UI kit (no external icon/chart libs) ----------
+function Niche({ children, style = {} }) {
+  return <div style={{ background: C.card, borderRadius: "22px 22px 10px 10px", border: `1px solid ${C.sandDark}`, padding: "18px 18px 16px", ...style }}>{children}</div>;
+}
+function DuneDivider() {
+  return <svg viewBox="0 0 400 24" preserveAspectRatio="none" style={{ width: "100%", height: 12, display: "block" }}>
+    <path d="M0,16 Q25,4 50,14 T100,12 T150,18 T200,8 T250,16 T300,10 T350,18 T400,12 L400,24 L0,24 Z" fill={C.clay} opacity="0.35" />
+  </svg>;
+}
+function SectionTitle({ eyebrow, title }) {
+  return <div style={{ marginBottom: 10 }}>
+    {eyebrow && <div style={{ fontSize: 11, color: C.clay, fontWeight: 600, marginBottom: 4 }}>{eyebrow}</div>}
+    <div style={{ fontSize: 17, fontWeight: 700, color: C.ink }}>{title}</div>
+    <DuneDivider />
+  </div>;
+}
+function KPICard({ emoji, label, value, sub, tone }) {
+  return <Niche style={{ flex: "1 1 150px", minWidth: 150 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ width: 30, height: 30, borderRadius: "50%", background: tone, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>{emoji}</div>
+      <div style={{ fontSize: 12, color: C.inkSoft }}>{label}</div>
+    </div>
+    <div style={{ fontSize: 21, fontWeight: 700, marginTop: 8 }}>{value}</div>
+    {sub && <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 2 }}>{sub}</div>}
+  </Niche>;
+}
+function Pill({ text, tone }) {
+  const map = {
+    ok: ["#E4EBDD", C.sage], due: ["#F5E7CE", C.gold], overdue: ["#F2DEDD", C.pomegranate],
+    income: ["#E4EBDD", C.sage], expense: ["#F2DEDD", C.pomegranate],
+    done: ["#E4EBDD", C.sage], planned: ["#E4E7EF", C.night],
+  };
+  const [bg, fg] = map[tone] || map.ok;
+  return <span style={{ background: bg, color: fg, fontSize: 11, padding: "3px 9px", borderRadius: 999, fontWeight: 600 }}>{text}</span>;
+}
+const inputStyle = { fontSize: 12.5, padding: "7px 9px", borderRadius: 8, border: `1px solid ${C.sandDark}`, background: "#fff", color: C.ink };
+const btnStyle = { fontSize: 12.5, fontWeight: 600, padding: "7px 14px", borderRadius: 8, border: "none", background: C.clay, color: "#fff", cursor: "pointer" };
+const btnCircle = { width: 24, height: 24, borderRadius: "50%", border: "none", background: C.clay, color: "#fff", cursor: "pointer" };
+
+// simple inline SVG bar/line chart (no recharts dependency)
+function MiniChart({ data, keys, colors, type = "bar", height = 200 }) {
+  if (!data.length) return null;
+  const max = Math.max(1, ...data.flatMap((d) => keys.map((k) => Number(d[k]) || 0)));
+  const w = 100 / data.length;
+  return (
+    <div>
+      <svg viewBox="0 0 300 120" style={{ width: "100%", height }} preserveAspectRatio="none">
+        {type === "bar" && data.map((d, i) => keys.map((k, ki) => {
+          const val = Number(d[k]) || 0;
+          const bw = (w / keys.length) * 0.7;
+          const x = i * w + ki * (w / keys.length) + (w / keys.length - bw) / 2;
+          const h = (val / max) * 100;
+          return <rect key={k+i} x={x*3} y={110 - h} width={bw*3} height={h} fill={colors[ki]} rx="2" />;
+        }))}
+        {type === "line" && keys.map((k, ki) => {
+          const pts = data.map((d, i) => `${i * w * 3 + w*1.5},${110 - (Number(d[k]) || 0) / max * 100}`).join(" ");
+          return <polyline key={k} points={pts} fill="none" stroke={colors[ki]} strokeWidth="2" />;
+        })}
+      </svg>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: C.inkSoft, marginTop: 2 }}>
+        {data.map((d) => <span key={d.month}>{d.month}</span>)}
+      </div>
+      <div style={{ display: "flex", gap: 10, marginTop: 4, fontSize: 11 }}>
+        {keys.map((k, i) => <span key={k} style={{ color: colors[i] }}>■ {k}</span>)}
+      </div>
+    </div>
+  );
+}
+
+// ---------- default seed data ----------
+const DEFAULT_ROOMS = [
+  { id: "marrakech", name: "اتاق مراکش", type: "master", capacity: 2, pricePerPerson: 1900 },
+  { id: "bukhara", name: "اتاق بخارا", type: "master", capacity: 2, pricePerPerson: 1900 },
+  { id: "samarkand", name: "اتاق سمرقند", type: "nonmaster", capacity: 2, pricePerPerson: 1700 },
+  { id: "bushehr", name: "اتاق بوشهر", type: "nonmaster", capacity: 5, pricePerPerson: 1700 },
+];
+const DAYS = ["شنبه", "یک‌شنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه", "جمعه"];
+const DEFAULT_EQUIPMENT = [
+  { id: uid(), name: "کولر گازی اتاق مراکش", period: "هر ۳ ماه", lastInspected: "-", status: "ok", repairs: [] },
+  { id: uid(), name: "پکیج حرارتی مرکزی", period: "هر ۶ ماه", lastInspected: "-", status: "due", repairs: [] },
+];
+const DEFAULT_INVENTORY = [
+  { id: uid(), name: "ملحفه یدکی", qty: 14, min: 10, unit: "عدد" },
+  { id: uid(), name: "مواد شوینده", qty: 3, min: 6, unit: "بطری" },
+];
+const DEFAULT_FINANCE = [];
+const DEFAULT_CARBON = [];
+const DEFAULT_EVENTS = [
+  { id: uid(), title: "جشن نوروز و هفت‌سین", season: "فروردین", budget: 15, status: "planned" },
+  { id: uid(), title: "شب رصد ستاره در کویر", season: "فروردین", budget: 12, status: "planned" },
+  { id: uid(), title: "کارگاه بافت شال و عبا", season: "اردیبهشت", budget: 8, status: "planned" },
+  { id: uid(), title: "فستیوال غذای محلی", season: "خرداد", budget: 10, status: "planned" },
+  { id: uid(), title: "تور عکاسی کویر", season: "تیر", budget: 7, status: "planned" },
+  { id: uid(), title: "شب موسیقی سنتی", season: "مرداد", budget: 18, status: "planned" },
+  { id: uid(), title: "شب شعر و ادب پارسی", season: "شهریور", budget: 6, status: "planned" },
+  { id: uid(), title: "جشن برداشت انار", season: "مهر", budget: 9, status: "planned" },
+  { id: uid(), title: "پیاده‌روی شبانه با ماه کامل", season: "آبان", budget: 5, status: "planned" },
+  { id: uid(), title: "شب یلدا", season: "آذر", budget: 14, status: "planned" },
+];
+
+const TABS = [
+  { key: "overview", label: "نمای کلی", emoji: "🏠" },
+  { key: "reservations", label: "رزرواسیون", emoji: "📅" },
+  { key: "maintenance", label: "تعمیرات", emoji: "🔧" },
+  { key: "accounting", label: "حسابداری", emoji: "🧮" },
+  { key: "inventory", label: "انبار", emoji: "📦" },
+  { key: "carbon", label: "ردپای کربن", emoji: "🌿" },
+  { key: "events", label: "رویدادها", emoji: "🎉" },
+  { key: "growth", label: "توسعه فردی", emoji: "📚" },
+];
+
+function App() {
+  const [tab, setTab] = useState("overview");
+  const [rooms, setRooms, roomsL] = useDoc("rooms", DEFAULT_ROOMS);
+  const [resMap, setResMap, resL] = useDoc("reservations", {});
+  const [equipment, setEquipment, eqL] = useDoc("equipment", DEFAULT_EQUIPMENT);
+  const [inventory, setInventory, invL] = useDoc("inventory", DEFAULT_INVENTORY);
+  const [finance, setFinance, finL, finErr] = useDoc("finance", DEFAULT_FINANCE);
+  const [carbon, setCarbon, carbonL] = useDoc("carbon", DEFAULT_CARBON);
+  const [events, setEvents, evL] = useDoc("events", DEFAULT_EVENTS);
+
+  const addFinanceEntry = (e) => setFinance((f) => [...f, { ...e, id: uid() }]);
+  const allLoaded = roomsL && resL && eqL && invL && finL && carbonL && evL;
+
+  const financeByMonth = useMemo(() => {
+    const map = {};
+    finance.forEach((e) => {
+      if (!map[e.month]) map[e.month] = { month: e.month, "درآمد": 0, "هزینه": 0 };
+      if (e.flow === "income") map[e.month]["درآمد"] += Number(e.amount) || 0;
+      else map[e.month]["هزینه"] += Number(e.amount) || 0;
+    });
+    return MONTHS.filter((m) => map[m]).map((m) => map[m]);
+  }, [finance]);
+
+  const incomeBySource = useMemo(() => {
+    const m = {};
+    finance.filter((e) => e.flow === "income").forEach((e) => { m[e.source] = (m[e.source] || 0) + Number(e.amount || 0); });
+    return m;
+  }, [finance]);
+  const expenseByScope = useMemo(() => {
+    const m = {};
+    finance.filter((e) => e.flow === "expense").forEach((e) => { m[e.scope] = (m[e.scope] || 0) + Number(e.amount || 0); });
+    return m;
+  }, [finance]);
+  const carbonSeries = useMemo(() => MONTHS.map((m) => carbon.find((c) => c.month === m)).filter(Boolean).map((r) => ({
+    ...r, "کربن": +(Number(r.electricity)*0.5 + Number(r.gas)*1.95 + Number(r.water)*0.45).toFixed(0)
+  })), [carbon]);
+
+  const lowStock = inventory.filter((i) => Number(i.qty) < Number(i.min));
+  const overdueEquip = equipment.filter((e) => e.status === "overdue").length;
+  const lastFin = financeByMonth[financeByMonth.length-1] || { "درآمد":0, "هزینه":0 };
+  const lastCarbon = carbonSeries[carbonSeries.length-1] || { "کربن": 0 };
+
+  if (firebaseConfig.apiKey === "PASTE_HERE") {
+    return <div dir="rtl" style={{ padding: 30, fontFamily: "inherit", color: C.pomegranate, background: C.sand, minHeight: "100vh" }}>
+      ⚠️ اول باید تنظیمات Firebase را در ابتدای فایل index.html جایگزین «PASTE_HERE» کنید (توضیحات کامل در README.md).
+    </div>;
+  }
+  if (!allLoaded) return <div dir="rtl" style={{ padding: 30, color: C.inkSoft }}>در حال بارگذاری…</div>;
+  if (finErr) return <div dir="rtl" style={{ padding: 30, color: C.pomegranate }}>خطای اتصال به پایگاه‌داده: {finErr}</div>;
+
+  return (
+    <div dir="rtl" style={{ background: C.sand, minHeight: "100vh", display: "flex" }}>
+      <div style={{ width: 170, flexShrink: 0, background: C.night, padding: "18px 10px", display: "flex", flexDirection: "column", gap: 3 }}>
+        <div style={{ color: C.gold, fontWeight: 700, fontSize: 15 }}>کاج‌بوم</div>
+        <div style={{ color: "#A9B0C9", fontSize: 10, marginBottom: 14 }}>اقامتگاه سنتی نایین</div>
+        {TABS.map((t) => (
+          <button key={t.key} onClick={() => setTab(t.key)} style={{
+            display: "flex", alignItems: "center", gap: 8, background: tab===t.key ? C.nightSoft : "transparent",
+            color: tab===t.key ? C.gold : "#C7CCDF", border: "none", borderRadius: 9, padding: "8px 9px",
+            fontSize: 12, cursor: "pointer", textAlign: "right" }}>
+            <span>{t.emoji}</span>{t.label}
+          </button>
+        ))}
+      </div>
+      <div style={{ flex: 1, padding: "20px 22px", maxWidth: 1000 }}>
+        <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 4 }}>{TABS.find(t=>t.key===tab)?.label}</div>
+        <div style={{ fontSize: 11.5, color: C.inkSoft, marginBottom: 16 }}>داده‌ها بین همهٔ دستگاه‌ها به‌صورت زنده هماهنگ می‌شوند</div>
+
+        {tab === "overview" && <>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
+            <KPICard emoji="🧮" label="درآمد ماه اخیر" value={lastFin["درآمد"]} sub={`هزینه: ${lastFin["هزینه"]}`} tone={C.sage} />
+            <KPICard emoji="💰" label="سود خالص" value={lastFin["درآمد"]-lastFin["هزینه"]} tone={C.clay} />
+            <KPICard emoji="🔧" label="تعمیرات عقب‌افتاده" value={overdueEquip} tone={C.pomegranate} />
+            <KPICard emoji="📦" label="کالای رو به اتمام" value={lowStock.length} sub={lowStock.map(i=>i.name).join("، ")||"کافی است"} tone={C.gold} />
+            <KPICard emoji="🌿" label="ردپای کربن اخیر" value={`${lastCarbon["کربن"]} kg`} tone={C.sage} />
+          </div>
+          <Niche>
+            <SectionTitle eyebrow="روند مالی" title="درآمد و هزینه ماهانه" />
+            {financeByMonth.length ? <MiniChart data={financeByMonth} keys={["درآمد","هزینه"]} colors={[C.clay, C.sageSoft]} type="bar" /> : <div style={{fontSize:12,color:C.inkSoft}}>هنوز تراکنشی ثبت نشده.</div>}
+          </Niche>
+        </>}
+
+        {tab === "reservations" && <ReservationsTab rooms={rooms} setRooms={setRooms} resMap={resMap} setResMap={setResMap} addFinanceEntry={addFinanceEntry} />}
+        {tab === "maintenance" && <MaintenanceTab equipment={equipment} setEquipment={setEquipment} addFinanceEntry={addFinanceEntry} />}
+        {tab === "accounting" && <AccountingTab finance={finance} setFinance={setFinance} financeByMonth={financeByMonth} incomeBySource={incomeBySource} expenseByScope={expenseByScope} />}
+        {tab === "inventory" && <InventoryTab inventory={inventory} setInventory={setInventory} addFinanceEntry={addFinanceEntry} />}
+        {tab === "carbon" && <CarbonTab carbon={carbon} setCarbon={setCarbon} carbonSeries={carbonSeries} />}
+        {tab === "events" && <EventsTab events={events} setEvents={setEvents} />}
+        {tab === "growth" && <Niche>
+          <SectionTitle eyebrow="آینه علاقه‌مندی‌ها" title="پیشنهاد توسعه فردی" />
+          <p style={{ fontSize: 13, lineHeight: 2 }}>بر اساس رویدادهای برگزارشده اخیر، بوم شما بیشتر به سمت فرهنگ و ادبیات محلی گرایش داشته است.</p>
+          {["نایین، شهر خشت و آفتاب", "سفرنامهٔ کویر — جلال آل‌احمد", "مستندهای زندگی کویرنشینی"].map(b=>(
+            <div key={b} style={{ background: C.sand, borderRadius: 10, padding: "9px 12px", fontSize: 12.5, marginTop: 6 }}>📖 {b}</div>
+          ))}
+        </Niche>}
+      </div>
+    </div>
+  );
+}
+
+function ReservationsTab({ rooms, setRooms, resMap, setResMap, addFinanceEntry }) {
+  const [editRoom, setEditRoom] = useState(null);
+  const [priceDraft, setPriceDraft] = useState("");
+  const [logMonth, setLogMonth] = useState(MONTHS[0]);
+  const key = (rid, di) => `${rid}:${di}`;
+  const getG = (rid, di) => resMap[key(rid,di)] || 0;
+  const cycle = (rid, cap, di) => setResMap(m => ({ ...m, [key(rid,di)]: (getG(rid,di) >= cap ? 0 : getG(rid,di)+1) }));
+  const weeklyTotal = useMemo(() => {
+    let s = 0; rooms.forEach(r => DAYS.forEach((_, di) => { s += getG(r.id, di) * r.pricePerPerson; })); return s;
+  }, [rooms, resMap]);
+  const savePrice = (id) => { setRooms(rs => rs.map(r => r.id===id ? {...r, pricePerPerson: Number(priceDraft)||r.pricePerPerson} : r)); setEditRoom(null); };
+  const logToAccounting = () => { if (weeklyTotal>0) addFinanceEntry({ month: logMonth, flow: "income", source: "اقامتگاه", category: "درآمد رزرو هفتگی", amount: weeklyTotal }); };
+
+  return <>
+    <Niche style={{ marginBottom: 14 }}>
+      <SectionTitle eyebrow="قیمت‌گذاری" title="اتاق‌ها (قیمت هر نفر)" />
+      {rooms.map(r => (
+        <div key={r.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:C.sand, borderRadius:10, padding:"8px 12px", marginBottom:6 }}>
+          <div><div style={{fontWeight:600, fontSize:13}}>{r.name}</div><div style={{fontSize:11,color:C.inkSoft}}>{r.type==="master"?"مستر":"غیرمستر"} — ظرفیت {r.capacity} نفر</div></div>
+          {editRoom===r.id ? <div style={{display:"flex",gap:6}}>
+            <input style={{...inputStyle,width:80}} value={priceDraft} onChange={e=>setPriceDraft(e.target.value)} />
+            <button style={btnStyle} onClick={()=>savePrice(r.id)}>ذخیره</button>
+          </div> : <button onClick={()=>{setEditRoom(r.id);setPriceDraft(String(r.pricePerPerson));}} style={{border:"none",background:"none",cursor:"pointer",fontWeight:700,color:C.clay}}>{r.pricePerPerson} ✎</button>}
+        </div>
+      ))}
+    </Niche>
+    <Niche>
+      <SectionTitle eyebrow="تقویم اشغال هفته" title="اتاق × روز" />
+      <div style={{overflowX:"auto"}}>
+        <table style={{borderCollapse:"collapse",width:"100%",fontSize:12}}>
+          <thead><tr><th style={{padding:6}}>اتاق</th>{DAYS.map(d=><th key={d} style={{padding:6,color:C.inkSoft,fontWeight:500}}>{d}</th>)}</tr></thead>
+          <tbody>{rooms.map(r=>(
+            <tr key={r.id}><td style={{padding:6,fontWeight:600}}>{r.name}</td>
+              {DAYS.map((_,di)=>{const g=getG(r.id,di);return <td key={di} style={{padding:4,textAlign:"center"}}>
+                <button onClick={()=>cycle(r.id,r.capacity,di)} style={{border:"none",cursor:"pointer",borderRadius:8,padding:"6px 4px",width:60,background:g>0?C.claySoft:C.sandDark,color:g>0?"#fff":C.inkSoft,fontSize:11}}>{g>0?`${g} نفر`:"خالی"}</button>
+              </td>;})}
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",marginTop:12,flexWrap:"wrap",gap:8}}>
+        <div style={{fontWeight:700,color:C.clay,fontSize:12.5}}>درآمد تخمینی هفته: {weeklyTotal}</div>
+        <div style={{display:"flex",gap:6}}>
+          <select style={inputStyle} value={logMonth} onChange={e=>setLogMonth(e.target.value)}>{MONTHS.map(m=><option key={m}>{m}</option>)}</select>
+          <button style={btnStyle} onClick={logToAccounting}>ثبت در حسابداری</button>
+        </div>
+      </div>
+    </Niche>
+  </>;
+}
+
+function MaintenanceTab({ equipment, setEquipment, addFinanceEntry }) {
+  const [openId, setOpenId] = useState(null);
+  const [form, setForm] = useState({ desc:"", cost:"", date:"", month: MONTHS[0] });
+  const [newEq, setNewEq] = useState({ name:"", period:"" });
+  const submitRepair = (id) => {
+    if (!form.desc) return;
+    setEquipment(eqs => eqs.map(e => e.id===id ? {...e, status:"ok", lastInspected: form.date||e.lastInspected, repairs:[...(e.repairs||[]), {...form,id:uid()}]} : e));
+    if (form.cost) addFinanceEntry({ month: form.month, flow:"expense", scope:"اقامتگاه", category:"تعمیرات", amount:Number(form.cost)||0, note:form.desc });
+    setForm({desc:"",cost:"",date:"",month:MONTHS[0]}); setOpenId(null);
+  };
+  const addEquipment = () => { if(!newEq.name) return; setEquipment(eqs=>[...eqs,{id:uid(),name:newEq.name,period:newEq.period||"نامشخص",lastInspected:"-",status:"due",repairs:[]}]); setNewEq({name:"",period:""}); };
+  return <Niche>
+    <SectionTitle eyebrow="پایش تجهیزات" title="لیست بازرسی و تعمیرات پیشگیرانه" />
+    {equipment.map(eq => <div key={eq.id} style={{background:C.sand,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><div style={{fontWeight:600,fontSize:13}}>{eq.name}</div><div style={{fontSize:11,color:C.inkSoft}}>دوره: {eq.period} — آخرین بازرسی: {eq.lastInspected}</div></div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <Pill text={eq.status==="ok"?"سالم":eq.status==="due"?"زمان بازرسی":"عقب‌افتاده"} tone={eq.status} />
+          <button style={{...btnStyle,padding:"5px 10px",fontSize:11}} onClick={()=>setOpenId(openId===eq.id?null:eq.id)}>ثبت تعمیر</button>
+        </div>
+      </div>
+      {openId===eq.id && <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+        <input style={inputStyle} placeholder="شرح ایراد" value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} />
+        <input style={{...inputStyle,width:80}} placeholder="هزینه" value={form.cost} onChange={e=>setForm({...form,cost:e.target.value})} />
+        <input style={{...inputStyle,width:100}} placeholder="تاریخ" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} />
+        <select style={inputStyle} value={form.month} onChange={e=>setForm({...form,month:e.target.value})}>{MONTHS.map(m=><option key={m}>{m}</option>)}</select>
+        <button style={btnStyle} onClick={()=>submitRepair(eq.id)}>ثبت</button>
+      </div>}
+    </div>)}
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
+      <input style={inputStyle} placeholder="نام تجهیز جدید" value={newEq.name} onChange={e=>setNewEq({...newEq,name:e.target.value})} />
+      <input style={inputStyle} placeholder="دوره بازرسی" value={newEq.period} onChange={e=>setNewEq({...newEq,period:e.target.value})} />
+      <button style={btnStyle} onClick={addEquipment}>+</button>
+    </div>
+  </Niche>;
+}
+
+function AccountingTab({ finance, setFinance, financeByMonth, incomeBySource, expenseByScope }) {
+  const [form, setForm] = useState({ month:MONTHS[0], flow:"income", source:INCOME_SOURCES[0], scope:EXPENSE_SCOPES[0], category:"", amount:"" });
+  const addEntry = () => { if(!form.amount) return;
+    const e = { month:form.month, flow:form.flow, category:form.category, amount:Number(form.amount)||0 };
+    if (form.flow==="income") e.source=form.source; else e.scope=form.scope;
+    setFinance(f=>[...f,{...e,id:uid()}]); setForm({...form,category:"",amount:""});
+  };
+  const removeEntry = (id) => setFinance(f=>f.filter(e=>e.id!==id));
+  const lastFin = financeByMonth[financeByMonth.length-1];
+  return <Niche>
+    <SectionTitle eyebrow="گزارش مالی" title="سود و زیان ماهانه" />
+    {financeByMonth.length>0 && <MiniChart data={financeByMonth} keys={["درآمد","هزینه"]} colors={[C.clay,C.pomegranate]} type="line" />}
+    {lastFin && <div style={{marginTop:8,fontSize:12,background:C.sand,borderRadius:10,padding:10}}>سود خالص {lastFin.month}: {lastFin["درآمد"]-lastFin["هزینه"]}</div>}
+    <div style={{display:"flex",gap:12,marginTop:14,flexWrap:"wrap"}}>
+      <div style={{flex:1,minWidth:180}}><div style={{fontWeight:700,fontSize:12.5,marginBottom:6}}>درآمد به تفکیک منبع</div>
+        {INCOME_SOURCES.map(s=><div key={s} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0"}}><span>{s}</span><b>{incomeBySource[s]||0}</b></div>)}</div>
+      <div style={{flex:1,minWidth:180}}><div style={{fontWeight:700,fontSize:12.5,marginBottom:6}}>هزینه به تفکیک نوع</div>
+        {EXPENSE_SCOPES.map(s=><div key={s} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0"}}><span>{s}</span><b>{expenseByScope[s]||0}</b></div>)}</div>
+    </div>
+    <div style={{fontWeight:700,fontSize:13,marginTop:14}}>تراکنش‌ها</div>
+    <div style={{maxHeight:200,overflowY:"auto",marginTop:6}}>
+      {finance.slice().reverse().map(e=>(
+        <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:C.sand,borderRadius:8,padding:"6px 10px",fontSize:12,marginBottom:5}}>
+          <span>{e.month} — {e.flow==="income"?e.source:e.scope} / {e.category} — {e.amount} <Pill text={e.flow==="income"?"درآمد":"هزینه"} tone={e.flow}/></span>
+          <button onClick={()=>removeEntry(e.id)} style={{border:"none",background:"none",cursor:"pointer"}}>🗑</button>
+        </div>
+      ))}
+    </div>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
+      <select style={inputStyle} value={form.month} onChange={e=>setForm({...form,month:e.target.value})}>{MONTHS.map(m=><option key={m}>{m}</option>)}</select>
+      <select style={inputStyle} value={form.flow} onChange={e=>setForm({...form,flow:e.target.value})}><option value="income">درآمد</option><option value="expense">هزینه</option></select>
+      {form.flow==="income" ? <select style={inputStyle} value={form.source} onChange={e=>setForm({...form,source:e.target.value})}>{INCOME_SOURCES.map(s=><option key={s}>{s}</option>)}</select>
+        : <select style={inputStyle} value={form.scope} onChange={e=>setForm({...form,scope:e.target.value})}>{EXPENSE_SCOPES.map(s=><option key={s}>{s}</option>)}</select>}
+      <input style={inputStyle} placeholder="دسته" value={form.category} onChange={e=>setForm({...form,category:e.target.value})} />
+      <input style={{...inputStyle,width:80}} placeholder="مبلغ" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} />
+      <button style={btnStyle} onClick={addEntry}>افزودن</button>
+    </div>
+  </Niche>;
+}
+
+function InventoryTab({ inventory, setInventory, addFinanceEntry }) {
+  const [newItem, setNewItem] = useState({name:"",qty:"",min:"",unit:"",cost:"",month:MONTHS[0]});
+  const addItem = () => { if(!newItem.name) return;
+    setInventory(inv=>[...inv,{id:uid(),name:newItem.name,qty:Number(newItem.qty)||0,min:Number(newItem.min)||0,unit:newItem.unit||"عدد"}]);
+    if (newItem.cost) addFinanceEntry({ month:newItem.month, flow:"expense", scope:"اقامتگاه", category:"خرید انبار", amount:Number(newItem.cost)||0, note:newItem.name });
+    setNewItem({name:"",qty:"",min:"",unit:"",cost:"",month:MONTHS[0]});
+  };
+  const removeItem = (id) => setInventory(inv=>inv.filter(i=>i.id!==id));
+  const bump = (id,d) => setInventory(inv=>inv.map(it=>it.id===id?{...it,qty:Math.max(0,Number(it.qty)+d)}:it));
+  return <Niche>
+    <SectionTitle eyebrow="موجودی انبار" title="کالاها و نقطه سفارش مجدد" />
+    {inventory.map(it=>{const low=Number(it.qty)<Number(it.min);return (
+      <div key={it.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:C.sand,borderRadius:10,padding:"10px 12px",marginBottom:6}}>
+        <div><div style={{fontWeight:600,fontSize:13}}>{it.name}</div><div style={{fontSize:11,color:C.inkSoft}}>حداقل: {it.min} {it.unit}</div></div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {low && <Pill text="کمبود" tone="overdue"/>}
+          <button onClick={()=>bump(it.id,-1)} style={btnCircle}>-</button>
+          <div style={{minWidth:30,textAlign:"center",fontWeight:700}}>{it.qty}</div>
+          <button onClick={()=>bump(it.id,1)} style={btnCircle}>+</button>
+          <button onClick={()=>removeItem(it.id)} style={{border:"none",background:"none",cursor:"pointer"}}>🗑</button>
+        </div>
+      </div>
+    );})}
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
+      <input style={inputStyle} placeholder="نام کالا" value={newItem.name} onChange={e=>setNewItem({...newItem,name:e.target.value})} />
+      <input style={{...inputStyle,width:60}} placeholder="موجودی" value={newItem.qty} onChange={e=>setNewItem({...newItem,qty:e.target.value})} />
+      <input style={{...inputStyle,width:60}} placeholder="حداقل" value={newItem.min} onChange={e=>setNewItem({...newItem,min:e.target.value})} />
+      <input style={{...inputStyle,width:55}} placeholder="واحد" value={newItem.unit} onChange={e=>setNewItem({...newItem,unit:e.target.value})} />
+      <input style={{...inputStyle,width:80}} placeholder="هزینه خرید" value={newItem.cost} onChange={e=>setNewItem({...newItem,cost:e.target.value})} />
+      <select style={inputStyle} value={newItem.month} onChange={e=>setNewItem({...newItem,month:e.target.value})}>{MONTHS.map(m=><option key={m}>{m}</option>)}</select>
+      <button style={btnStyle} onClick={addItem}>+</button>
+    </div>
+  </Niche>;
+}
+
+function CarbonTab({ carbon, setCarbon, carbonSeries }) {
+  const [form, setForm] = useState({month:MONTHS[0],water:"",electricity:"",gas:""});
+  const addReading = () => { if(!form.electricity&&!form.gas&&!form.water) return; setCarbon(c=>[...c.filter(r=>r.month!==form.month),{...form,id:uid()}]); setForm({month:MONTHS[0],water:"",electricity:"",gas:""}); };
+  return <Niche>
+    <SectionTitle eyebrow="مصرف انرژی" title="روند ردپای کربن ماهانه (kg CO₂)" />
+    {carbonSeries.length>0 ? <MiniChart data={carbonSeries} keys={["کربن"]} colors={[C.sage]} type="line" /> : <div style={{fontSize:12,color:C.inkSoft}}>هنوز قرائتی ثبت نشده.</div>}
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:12}}>
+      <select style={inputStyle} value={form.month} onChange={e=>setForm({...form,month:e.target.value})}>{MONTHS.map(m=><option key={m}>{m}</option>)}</select>
+      <input style={{...inputStyle,width:80}} placeholder="آب" value={form.water} onChange={e=>setForm({...form,water:e.target.value})} />
+      <input style={{...inputStyle,width:80}} placeholder="برق" value={form.electricity} onChange={e=>setForm({...form,electricity:e.target.value})} />
+      <input style={{...inputStyle,width:80}} placeholder="گاز" value={form.gas} onChange={e=>setForm({...form,gas:e.target.value})} />
+      <button style={btnStyle} onClick={addReading}>ثبت ماه</button>
+    </div>
+  </Niche>;
+}
+
+function EventsTab({ events, setEvents }) {
+  const toggle = (id) => setEvents(evs=>evs.map(e=>e.id===id?{...e,status:e.status==="done"?"planned":"done"}:e));
+  const removeEvent = (id) => setEvents(evs=>evs.filter(e=>e.id!==id));
+  const total = events.reduce((s,e)=>s+Number(e.budget||0),0);
+  return <Niche>
+    <SectionTitle eyebrow="تقویم سالانه" title="رویدادهای پیشنهادی و بودجه" />
+    {events.map(ev=>(
+      <div key={ev.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:C.sand,borderRadius:10,padding:"9px 12px",marginBottom:6}}>
+        <div><div style={{fontWeight:600,fontSize:13}}>{ev.title}</div><div style={{fontSize:11,color:C.inkSoft}}>فصل: {ev.season} — بودجه: {ev.budget}</div></div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button onClick={()=>toggle(ev.id)} style={{border:"none",background:"none",cursor:"pointer"}}><Pill text={ev.status==="done"?"برگزار شد":"برنامه‌ریزی‌شده"} tone={ev.status}/></button>
+          <button onClick={()=>removeEvent(ev.id)} style={{border:"none",background:"none",cursor:"pointer"}}>🗑</button>
+        </div>
+      </div>
+    ))}
+    <div style={{fontWeight:700,color:C.clay,marginTop:8}}>جمع بودجه سالانه: {total}</div>
+  </Niche>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
+}
+</script>
+</body>
+</html>
