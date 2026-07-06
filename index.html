@@ -14,10 +14,9 @@
   button, input, select { font-family: inherit; }
 </style>
 
-<!-- React (no build step needed) -->
+<!-- React only (no Babel needed - this version uses React.createElement directly) -->
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js" crossorigin></script>
 
 <!-- Firebase (free tier) for shared real-time data between devices -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -39,8 +38,9 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 </script>
 
-<script type="text/babel">
+<script>
 const { useState, useEffect, useMemo } = React;
+const h = React.createElement;
 
 const C = {
   sand: "#EFE3C8", sandDark: "#DDC79E", card: "#F8F1DE", ink: "#2B2118", inkSoft: "#5C503E",
@@ -76,70 +76,75 @@ function useDoc(docId, initial) {
   return [value, update, loaded, err];
 }
 
-function Niche({ children, style = {} }) {
-  return <div style={{ background: C.card, borderRadius: "22px 22px 10px 10px", border: `1px solid ${C.sandDark}`, padding: "18px 18px 16px", ...style }}>{children}</div>;
+function Niche(props) {
+  const style = Object.assign({ background: C.card, borderRadius: "22px 22px 10px 10px", border: "1px solid " + C.sandDark, padding: "18px 18px 16px" }, props.style || {});
+  return h("div", { style: style }, props.children);
 }
 function DuneDivider() {
-  return <svg viewBox="0 0 400 24" preserveAspectRatio="none" style={{ width: "100%", height: 12, display: "block" }}>
-    <path d="M0,16 Q25,4 50,14 T100,12 T150,18 T200,8 T250,16 T300,10 T350,18 T400,12 L400,24 L0,24 Z" fill={C.clay} opacity="0.35" />
-  </svg>;
+  return h("svg", { viewBox: "0 0 400 24", preserveAspectRatio: "none", style: { width: "100%", height: 12, display: "block" } },
+    h("path", { d: "M0,16 Q25,4 50,14 T100,12 T150,18 T200,8 T250,16 T300,10 T350,18 T400,12 L400,24 L0,24 Z", fill: C.clay, opacity: "0.35" })
+  );
 }
-function SectionTitle({ eyebrow, title }) {
-  return <div style={{ marginBottom: 10 }}>
-    {eyebrow && <div style={{ fontSize: 11, color: C.clay, fontWeight: 600, marginBottom: 4 }}>{eyebrow}</div>}
-    <div style={{ fontSize: 17, fontWeight: 700, color: C.ink }}>{title}</div>
-    <DuneDivider />
-  </div>;
+function SectionTitle(props) {
+  return h("div", { style: { marginBottom: 10 } },
+    props.eyebrow ? h("div", { style: { fontSize: 11, color: C.clay, fontWeight: 600, marginBottom: 4 } }, props.eyebrow) : null,
+    h("div", { style: { fontSize: 17, fontWeight: 700, color: C.ink } }, props.title),
+    h(DuneDivider)
+  );
 }
-function KPICard({ emoji, label, value, sub, tone }) {
-  return <Niche style={{ flex: "1 1 150px", minWidth: 150 }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{ width: 30, height: 30, borderRadius: "50%", background: tone, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>{emoji}</div>
-      <div style={{ fontSize: 12, color: C.inkSoft }}>{label}</div>
-    </div>
-    <div style={{ fontSize: 21, fontWeight: 700, marginTop: 8 }}>{value}</div>
-    {sub && <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 2 }}>{sub}</div>}
-  </Niche>;
+function KPICard(props) {
+  return h(Niche, { style: { flex: "1 1 150px", minWidth: 150 } },
+    h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+      h("div", { style: { width: 30, height: 30, borderRadius: "50%", background: props.tone, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 } }, props.emoji),
+      h("div", { style: { fontSize: 12, color: C.inkSoft } }, props.label)
+    ),
+    h("div", { style: { fontSize: 21, fontWeight: 700, marginTop: 8 } }, props.value),
+    props.sub ? h("div", { style: { fontSize: 11, color: C.inkSoft, marginTop: 2 } }, props.sub) : null
+  );
 }
-function Pill({ text, tone }) {
+function Pill(props) {
   const map = {
     ok: ["#E4EBDD", C.sage], due: ["#F5E7CE", C.gold], overdue: ["#F2DEDD", C.pomegranate],
     income: ["#E4EBDD", C.sage], expense: ["#F2DEDD", C.pomegranate],
     done: ["#E4EBDD", C.sage], planned: ["#E4E7EF", C.night],
   };
-  const [bg, fg] = map[tone] || map.ok;
-  return <span style={{ background: bg, color: fg, fontSize: 11, padding: "3px 9px", borderRadius: 999, fontWeight: 600 }}>{text}</span>;
+  const pair = map[props.tone] || map.ok;
+  return h("span", { style: { background: pair[0], color: pair[1], fontSize: 11, padding: "3px 9px", borderRadius: 999, fontWeight: 600 } }, props.text);
 }
-const inputStyle = { fontSize: 12.5, padding: "7px 9px", borderRadius: 8, border: `1px solid ${C.sandDark}`, background: "#fff", color: C.ink };
+const inputStyle = { fontSize: 12.5, padding: "7px 9px", borderRadius: 8, border: "1px solid " + C.sandDark, background: "#fff", color: C.ink };
 const btnStyle = { fontSize: 12.5, fontWeight: 600, padding: "7px 14px", borderRadius: 8, border: "none", background: C.clay, color: "#fff", cursor: "pointer" };
 const btnCircle = { width: 24, height: 24, borderRadius: "50%", border: "none", background: C.clay, color: "#fff", cursor: "pointer" };
 
-function MiniChart({ data, keys, colors, type = "bar", height = 200 }) {
+function MiniChart(props) {
+  const data = props.data, keys = props.keys, colors = props.colors, type = props.type || "bar", height = props.height || 200;
   if (!data.length) return null;
   const max = Math.max(1, ...data.flatMap((d) => keys.map((k) => Number(d[k]) || 0)));
   const w = 100 / data.length;
-  return (
-    <div>
-      <svg viewBox="0 0 300 120" style={{ width: "100%", height }} preserveAspectRatio="none">
-        {type === "bar" && data.map((d, i) => keys.map((k, ki) => {
-          const val = Number(d[k]) || 0;
-          const bw = (w / keys.length) * 0.7;
-          const x = i * w + ki * (w / keys.length) + (w / keys.length - bw) / 2;
-          const h = (val / max) * 100;
-          return <rect key={k+i} x={x*3} y={110 - h} width={bw*3} height={h} fill={colors[ki]} rx="2" />;
-        }))}
-        {type === "line" && keys.map((k, ki) => {
-          const pts = data.map((d, i) => `${i * w * 3 + w*1.5},${110 - (Number(d[k]) || 0) / max * 100}`).join(" ");
-          return <polyline key={k} points={pts} fill="none" stroke={colors[ki]} strokeWidth="2" />;
-        })}
-      </svg>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: C.inkSoft, marginTop: 2 }}>
-        {data.map((d) => <span key={d.month}>{d.month}</span>)}
-      </div>
-      <div style={{ display: "flex", gap: 10, marginTop: 4, fontSize: 11 }}>
-        {keys.map((k, i) => <span key={k} style={{ color: colors[i] }}>■ {k}</span>)}
-      </div>
-    </div>
+  const shapes = [];
+  if (type === "bar") {
+    data.forEach((d, i) => {
+      keys.forEach((k, ki) => {
+        const val = Number(d[k]) || 0;
+        const bw = (w / keys.length) * 0.7;
+        const x = i * w + ki * (w / keys.length) + (w / keys.length - bw) / 2;
+        const hgt = (val / max) * 100;
+        shapes.push(h("rect", { key: k + i, x: x * 3, y: 110 - hgt, width: bw * 3, height: hgt, fill: colors[ki], rx: "2" }));
+      });
+    });
+  } else if (type === "line") {
+    keys.forEach((k, ki) => {
+      const pts = data.map((d, i) => (i * w * 3 + w * 1.5) + "," + (110 - (Number(d[k]) || 0) / max * 100)).join(" ");
+      shapes.push(h("polyline", { key: k, points: pts, fill: "none", stroke: colors[ki], strokeWidth: "2" }));
+    });
+  }
+  return h("div", null,
+    h("svg", { viewBox: "0 0 300 120", style: { width: "100%", height: height }, preserveAspectRatio: "none" }, shapes),
+    h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 9, color: C.inkSoft, marginTop: 2 } },
+      data.map((d) => h("span", { key: d.month }, d.month))
+    ),
+    h("div", { style: { display: "flex", gap: 10, marginTop: 4, fontSize: 11 } },
+      keys.map((k, i) => h("span", { key: k, style: { color: colors[i] } }, "■ " + k))
+    )
   );
 }
 
@@ -186,15 +191,15 @@ const TABS = [
 
 function App() {
   const [tab, setTab] = useState("overview");
-  const [rooms, setRooms, roomsL] = useDoc("rooms", DEFAULT_ROOMS);
-  const [resMap, setResMap, resL] = useDoc("reservations", {});
-  const [equipment, setEquipment, eqL] = useDoc("equipment", DEFAULT_EQUIPMENT);
-  const [inventory, setInventory, invL] = useDoc("inventory", DEFAULT_INVENTORY);
-  const [finance, setFinance, finL, finErr] = useDoc("finance", DEFAULT_FINANCE);
-  const [carbon, setCarbon, carbonL] = useDoc("carbon", DEFAULT_CARBON);
-  const [events, setEvents, evL] = useDoc("events", DEFAULT_EVENTS);
+  const rr = useDoc("rooms", DEFAULT_ROOMS); const rooms = rr[0], setRooms = rr[1], roomsL = rr[2];
+  const rm = useDoc("reservations", {}); const resMap = rm[0], setResMap = rm[1], resL = rm[2];
+  const eq = useDoc("equipment", DEFAULT_EQUIPMENT); const equipment = eq[0], setEquipment = eq[1], eqL = eq[2];
+  const iv = useDoc("inventory", DEFAULT_INVENTORY); const inventory = iv[0], setInventory = iv[1], invL = iv[2];
+  const fn = useDoc("finance", DEFAULT_FINANCE); const finance = fn[0], setFinance = fn[1], finL = fn[2], finErr = fn[3];
+  const cb = useDoc("carbon", DEFAULT_CARBON); const carbon = cb[0], setCarbon = cb[1], carbonL = cb[2];
+  const ev = useDoc("events", DEFAULT_EVENTS); const events = ev[0], setEvents = ev[1], evL = ev[2];
 
-  const addFinanceEntry = (e) => setFinance((f) => [...f, { ...e, id: uid() }]);
+  const addFinanceEntry = (e) => setFinance((f) => f.concat([Object.assign({}, e, { id: uid() })]));
   const allLoaded = roomsL && resL && eqL && invL && finL && carbonL && evL;
 
   const financeByMonth = useMemo(() => {
@@ -217,254 +222,288 @@ function App() {
     finance.filter((e) => e.flow === "expense").forEach((e) => { m[e.scope] = (m[e.scope] || 0) + Number(e.amount || 0); });
     return m;
   }, [finance]);
-  const carbonSeries = useMemo(() => MONTHS.map((m) => carbon.find((c) => c.month === m)).filter(Boolean).map((r) => ({
-    ...r, "کربن": +(Number(r.electricity)*0.5 + Number(r.gas)*1.95 + Number(r.water)*0.45).toFixed(0)
-  })), [carbon]);
+  const carbonSeries = useMemo(() => MONTHS.map((m) => carbon.find((c) => c.month === m)).filter(Boolean).map((r) => {
+    return Object.assign({}, r, { "کربن": +(Number(r.electricity) * 0.5 + Number(r.gas) * 1.95 + Number(r.water) * 0.45).toFixed(0) });
+  }), [carbon]);
 
   const lowStock = inventory.filter((i) => Number(i.qty) < Number(i.min));
   const overdueEquip = equipment.filter((e) => e.status === "overdue").length;
-  const lastFin = financeByMonth[financeByMonth.length-1] || { "درآمد":0, "هزینه":0 };
-  const lastCarbon = carbonSeries[carbonSeries.length-1] || { "کربن": 0 };
+  const lastFin = financeByMonth[financeByMonth.length - 1] || { "درآمد": 0, "هزینه": 0 };
+  const lastCarbon = carbonSeries[carbonSeries.length - 1] || { "کربن": 0 };
 
-  if (firebaseConfig.apiKey === "PASTE_HERE") {
-    return <div dir="rtl" style={{ padding: 30, fontFamily: "inherit", color: C.pomegranate, background: C.sand, minHeight: "100vh" }}>
-      ⚠️ اول باید تنظیمات Firebase را در ابتدای فایل index.html جایگزین «PASTE_HERE» کنید.
-    </div>;
-  }
-  if (!allLoaded) return <div dir="rtl" style={{ padding: 30, color: C.inkSoft }}>در حال بارگذاری…</div>;
-  if (finErr) return <div dir="rtl" style={{ padding: 30, color: C.pomegranate }}>خطای اتصال به پایگاه‌داده: {finErr}</div>;
+  if (!allLoaded) return h("div", { dir: "rtl", style: { padding: 30, color: C.inkSoft } }, "در حال بارگذاری…");
+  if (finErr) return h("div", { dir: "rtl", style: { padding: 30, color: C.pomegranate } }, "خطای اتصال به پایگاه‌داده: " + finErr);
 
-  return (
-    <div dir="rtl" style={{ background: C.sand, minHeight: "100vh", display: "flex" }}>
-      <div style={{ width: 170, flexShrink: 0, background: C.night, padding: "18px 10px", display: "flex", flexDirection: "column", gap: 3 }}>
-        <div style={{ color: C.gold, fontWeight: 700, fontSize: 15 }}>کاج‌بوم</div>
-        <div style={{ color: "#A9B0C9", fontSize: 10, marginBottom: 14 }}>اقامتگاه سنتی نایین</div>
-        {TABS.map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{
-            display: "flex", alignItems: "center", gap: 8, background: tab===t.key ? C.nightSoft : "transparent",
-            color: tab===t.key ? C.gold : "#C7CCDF", border: "none", borderRadius: 9, padding: "8px 9px",
-            fontSize: 12, cursor: "pointer", textAlign: "right" }}>
-            <span>{t.emoji}</span>{t.label}
-          </button>
-        ))}
-      </div>
-      <div style={{ flex: 1, padding: "20px 22px", maxWidth: 1000 }}>
-        <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 4 }}>{TABS.find(t=>t.key===tab)?.label}</div>
-        <div style={{ fontSize: 11.5, color: C.inkSoft, marginBottom: 16 }}>داده‌ها بین همهٔ دستگاه‌ها به‌صورت زنده هماهنگ می‌شوند</div>
+  return h("div", { dir: "rtl", style: { background: C.sand, minHeight: "100vh", display: "flex" } },
+    h("div", { style: { width: 170, flexShrink: 0, background: C.night, padding: "18px 10px", display: "flex", flexDirection: "column", gap: 3 } },
+      h("div", { style: { color: C.gold, fontWeight: 700, fontSize: 15 } }, "کاج‌بوم"),
+      h("div", { style: { color: "#A9B0C9", fontSize: 10, marginBottom: 14 } }, "اقامتگاه سنتی نایین"),
+      TABS.map((t) => h("button", {
+        key: t.key, onClick: () => setTab(t.key),
+        style: { display: "flex", alignItems: "center", gap: 8, background: tab === t.key ? C.nightSoft : "transparent",
+          color: tab === t.key ? C.gold : "#C7CCDF", border: "none", borderRadius: 9, padding: "8px 9px", fontSize: 12, cursor: "pointer", textAlign: "right" }
+      }, h("span", null, t.emoji), t.label))
+    ),
+    h("div", { style: { flex: 1, padding: "20px 22px", maxWidth: 1000 } },
+      h("div", { style: { fontSize: 19, fontWeight: 700, marginBottom: 4 } }, (TABS.find((t) => t.key === tab) || {}).label),
+      h("div", { style: { fontSize: 11.5, color: C.inkSoft, marginBottom: 16 } }, "داده‌ها بین همهٔ دستگاه‌ها به‌صورت زنده هماهنگ می‌شوند"),
 
-        {tab === "overview" && <>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
-            <KPICard emoji="🧮" label="درآمد ماه اخیر" value={lastFin["درآمد"]} sub={`هزینه: ${lastFin["هزینه"]}`} tone={C.sage} />
-            <KPICard emoji="💰" label="سود خالص" value={lastFin["درآمد"]-lastFin["هزینه"]} tone={C.clay} />
-            <KPICard emoji="🔧" label="تعمیرات عقب‌افتاده" value={overdueEquip} tone={C.pomegranate} />
-            <KPICard emoji="📦" label="کالای رو به اتمام" value={lowStock.length} sub={lowStock.map(i=>i.name).join("، ")||"کافی است"} tone={C.gold} />
-            <KPICard emoji="🌿" label="ردپای کربن اخیر" value={`${lastCarbon["کربن"]} kg`} tone={C.sage} />
-          </div>
-          <Niche>
-            <SectionTitle eyebrow="روند مالی" title="درآمد و هزینه ماهانه" />
-            {financeByMonth.length ? <MiniChart data={financeByMonth} keys={["درآمد","هزینه"]} colors={[C.clay, C.sageSoft]} type="bar" /> : <div style={{fontSize:12,color:C.inkSoft}}>هنوز تراکنشی ثبت نشده.</div>}
-          </Niche>
-        </>}
+      tab === "overview" ? h(React.Fragment, null,
+        h("div", { style: { display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 } },
+          h(KPICard, { emoji: "🧮", label: "درآمد ماه اخیر", value: lastFin["درآمد"], sub: "هزینه: " + lastFin["هزینه"], tone: C.sage }),
+          h(KPICard, { emoji: "💰", label: "سود خالص", value: lastFin["درآمد"] - lastFin["هزینه"], tone: C.clay }),
+          h(KPICard, { emoji: "🔧", label: "تعمیرات عقب‌افتاده", value: overdueEquip, tone: C.pomegranate }),
+          h(KPICard, { emoji: "📦", label: "کالای رو به اتمام", value: lowStock.length, sub: lowStock.map((i) => i.name).join("، ") || "کافی است", tone: C.gold }),
+          h(KPICard, { emoji: "🌿", label: "ردپای کربن اخیر", value: lastCarbon["کربن"] + " kg", tone: C.sage })
+        ),
+        h(Niche, null,
+          h(SectionTitle, { eyebrow: "روند مالی", title: "درآمد و هزینه ماهانه" }),
+          financeByMonth.length ? h(MiniChart, { data: financeByMonth, keys: ["درآمد", "هزینه"], colors: [C.clay, C.sageSoft], type: "bar" }) : h("div", { style: { fontSize: 12, color: C.inkSoft } }, "هنوز تراکنشی ثبت نشده.")
+        )
+      ) : null,
 
-        {tab === "reservations" && <ReservationsTab rooms={rooms} setRooms={setRooms} resMap={resMap} setResMap={setResMap} addFinanceEntry={addFinanceEntry} />}
-        {tab === "maintenance" && <MaintenanceTab equipment={equipment} setEquipment={setEquipment} addFinanceEntry={addFinanceEntry} />}
-        {tab === "accounting" && <AccountingTab finance={finance} setFinance={setFinance} financeByMonth={financeByMonth} incomeBySource={incomeBySource} expenseByScope={expenseByScope} />}
-        {tab === "inventory" && <InventoryTab inventory={inventory} setInventory={setInventory} addFinanceEntry={addFinanceEntry} />}
-        {tab === "carbon" && <CarbonTab carbon={carbon} setCarbon={setCarbon} carbonSeries={carbonSeries} />}
-        {tab === "events" && <EventsTab events={events} setEvents={setEvents} />}
-        {tab === "growth" && <Niche>
-          <SectionTitle eyebrow="آینه علاقه‌مندی‌ها" title="پیشنهاد توسعه فردی" />
-          <p style={{ fontSize: 13, lineHeight: 2 }}>بر اساس رویدادهای برگزارشده اخیر، بوم شما بیشتر به سمت فرهنگ و ادبیات محلی گرایش داشته است.</p>
-          {["نایین، شهر خشت و آفتاب", "سفرنامهٔ کویر — جلال آل‌احمد", "مستندهای زندگی کویرنشینی"].map(b=>(
-            <div key={b} style={{ background: C.sand, borderRadius: 10, padding: "9px 12px", fontSize: 12.5, marginTop: 6 }}>📖 {b}</div>
-          ))}
-        </Niche>}
-      </div>
-    </div>
+      tab === "reservations" ? h(ReservationsTab, { rooms: rooms, setRooms: setRooms, resMap: resMap, setResMap: setResMap, addFinanceEntry: addFinanceEntry }) : null,
+      tab === "maintenance" ? h(MaintenanceTab, { equipment: equipment, setEquipment: setEquipment, addFinanceEntry: addFinanceEntry }) : null,
+      tab === "accounting" ? h(AccountingTab, { finance: finance, setFinance: setFinance, financeByMonth: financeByMonth, incomeBySource: incomeBySource, expenseByScope: expenseByScope }) : null,
+      tab === "inventory" ? h(InventoryTab, { inventory: inventory, setInventory: setInventory, addFinanceEntry: addFinanceEntry }) : null,
+      tab === "carbon" ? h(CarbonTab, { carbon: carbon, setCarbon: setCarbon, carbonSeries: carbonSeries }) : null,
+      tab === "events" ? h(EventsTab, { events: events, setEvents: setEvents }) : null,
+      tab === "growth" ? h(Niche, null,
+        h(SectionTitle, { eyebrow: "آینه علاقه‌مندی‌ها", title: "پیشنهاد توسعه فردی" }),
+        h("p", { style: { fontSize: 13, lineHeight: 2 } }, "بر اساس رویدادهای برگزارشده اخیر، بوم شما بیشتر به سمت فرهنگ و ادبیات محلی گرایش داشته است."),
+        ["نایین، شهر خشت و آفتاب", "سفرنامهٔ کویر — جلال آل‌احمد", "مستندهای زندگی کویرنشینی"].map((b) => h("div", { key: b, style: { background: C.sand, borderRadius: 10, padding: "9px 12px", fontSize: 12.5, marginTop: 6 } }, "📖 " + b))
+      ) : null
+    )
   );
 }
 
-function ReservationsTab({ rooms, setRooms, resMap, setResMap, addFinanceEntry }) {
+function ReservationsTab(props) {
+  const rooms = props.rooms, setRooms = props.setRooms, resMap = props.resMap, setResMap = props.setResMap, addFinanceEntry = props.addFinanceEntry;
   const [editRoom, setEditRoom] = useState(null);
   const [priceDraft, setPriceDraft] = useState("");
   const [logMonth, setLogMonth] = useState(MONTHS[0]);
-  const key = (rid, di) => `${rid}:${di}`;
-  const getG = (rid, di) => resMap[key(rid,di)] || 0;
-  const cycle = (rid, cap, di) => setResMap(m => ({ ...m, [key(rid,di)]: (getG(rid,di) >= cap ? 0 : getG(rid,di)+1) }));
-  const weeklyTotal = useMemo(() => {
-    let s = 0; rooms.forEach(r => DAYS.forEach((_, di) => { s += getG(r.id, di) * r.pricePerPerson; })); return s;
-  }, [rooms, resMap]);
-  const savePrice = (id) => { setRooms(rs => rs.map(r => r.id===id ? {...r, pricePerPerson: Number(priceDraft)||r.pricePerPerson} : r)); setEditRoom(null); };
-  const logToAccounting = () => { if (weeklyTotal>0) addFinanceEntry({ month: logMonth, flow: "income", source: "اقامتگاه", category: "درآمد رزرو هفتگی", amount: weeklyTotal }); };
+  const key = (rid, di) => rid + ":" + di;
+  const getG = (rid, di) => resMap[key(rid, di)] || 0;
+  const cycle = (rid, cap, di) => setResMap((m) => { const n = Object.assign({}, m); n[key(rid, di)] = (getG(rid, di) >= cap ? 0 : getG(rid, di) + 1); return n; });
+  const weeklyTotal = useMemo(() => { let s = 0; rooms.forEach((r) => DAYS.forEach((_, di) => { s += getG(r.id, di) * r.pricePerPerson; })); return s; }, [rooms, resMap]);
+  const savePrice = (id) => { setRooms((rs) => rs.map((r) => r.id === id ? Object.assign({}, r, { pricePerPerson: Number(priceDraft) || r.pricePerPerson }) : r)); setEditRoom(null); };
+  const logToAccounting = () => { if (weeklyTotal > 0) addFinanceEntry({ month: logMonth, flow: "income", source: "اقامتگاه", category: "درآمد رزرو هفتگی", amount: weeklyTotal }); };
 
-  return <>
-    <Niche style={{ marginBottom: 14 }}>
-      <SectionTitle eyebrow="قیمت‌گذاری" title="اتاق‌ها (قیمت هر نفر)" />
-      {rooms.map(r => (
-        <div key={r.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:C.sand, borderRadius:10, padding:"8px 12px", marginBottom:6 }}>
-          <div><div style={{fontWeight:600, fontSize:13}}>{r.name}</div><div style={{fontSize:11,color:C.inkSoft}}>{r.type==="master"?"مستر":"غیرمستر"} — ظرفیت {r.capacity} نفر</div></div>
-          {editRoom===r.id ? <div style={{display:"flex",gap:6}}>
-            <input style={{...inputStyle,width:80}} value={priceDraft} onChange={e=>setPriceDraft(e.target.value)} />
-            <button style={btnStyle} onClick={()=>savePrice(r.id)}>ذخیره</button>
-          </div> : <button onClick={()=>{setEditRoom(r.id);setPriceDraft(String(r.pricePerPerson));}} style={{border:"none",background:"none",cursor:"pointer",fontWeight:700,color:C.clay}}>{r.pricePerPerson} ✎</button>}
-        </div>
-      ))}
-    </Niche>
-    <Niche>
-      <SectionTitle eyebrow="تقویم اشغال هفته" title="اتاق × روز" />
-      <div style={{overflowX:"auto"}}>
-        <table style={{borderCollapse:"collapse",width:"100%",fontSize:12}}>
-          <thead><tr><th style={{padding:6}}>اتاق</th>{DAYS.map(d=><th key={d} style={{padding:6,color:C.inkSoft,fontWeight:500}}>{d}</th>)}</tr></thead>
-          <tbody>{rooms.map(r=>(
-            <tr key={r.id}><td style={{padding:6,fontWeight:600}}>{r.name}</td>
-              {DAYS.map((_,di)=>{const g=getG(r.id,di);return <td key={di} style={{padding:4,textAlign:"center"}}>
-                <button onClick={()=>cycle(r.id,r.capacity,di)} style={{border:"none",cursor:"pointer",borderRadius:8,padding:"6px 4px",width:60,background:g>0?C.claySoft:C.sandDark,color:g>0?"#fff":C.inkSoft,fontSize:11}}>{g>0?`${g} نفر`:"خالی"}</button>
-              </td>;})}
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-      <div style={{display:"flex",justifyContent:"space-between",marginTop:12,flexWrap:"wrap",gap:8}}>
-        <div style={{fontWeight:700,color:C.clay,fontSize:12.5}}>درآمد تخمینی هفته: {weeklyTotal}</div>
-        <div style={{display:"flex",gap:6}}>
-          <select style={inputStyle} value={logMonth} onChange={e=>setLogMonth(e.target.value)}>{MONTHS.map(m=><option key={m}>{m}</option>)}</select>
-          <button style={btnStyle} onClick={logToAccounting}>ثبت در حسابداری</button>
-        </div>
-      </div>
-    </Niche>
-  </>;
+  return h(React.Fragment, null,
+    h(Niche, { style: { marginBottom: 14 } },
+      h(SectionTitle, { eyebrow: "قیمت‌گذاری", title: "اتاق‌ها (قیمت هر نفر)" }),
+      rooms.map((r) => h("div", { key: r.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 10, padding: "8px 12px", marginBottom: 6 } },
+        h("div", null,
+          h("div", { style: { fontWeight: 600, fontSize: 13 } }, r.name),
+          h("div", { style: { fontSize: 11, color: C.inkSoft } }, (r.type === "master" ? "مستر" : "غیرمستر") + " — ظرفیت " + r.capacity + " نفر")
+        ),
+        editRoom === r.id
+          ? h("div", { style: { display: "flex", gap: 6 } },
+              h("input", { style: Object.assign({}, inputStyle, { width: 80 }), value: priceDraft, onChange: (e) => setPriceDraft(e.target.value) }),
+              h("button", { style: btnStyle, onClick: () => savePrice(r.id) }, "ذخیره")
+            )
+          : h("button", { onClick: () => { setEditRoom(r.id); setPriceDraft(String(r.pricePerPerson)); }, style: { border: "none", background: "none", cursor: "pointer", fontWeight: 700, color: C.clay } }, r.pricePerPerson + " ✎")
+      ))
+    ),
+    h(Niche, null,
+      h(SectionTitle, { eyebrow: "تقویم اشغال هفته", title: "اتاق × روز" }),
+      h("div", { style: { overflowX: "auto" } },
+        h("table", { style: { borderCollapse: "collapse", width: "100%", fontSize: 12 } },
+          h("thead", null, h("tr", null, h("th", { style: { padding: 6 } }, "اتاق"), DAYS.map((d) => h("th", { key: d, style: { padding: 6, color: C.inkSoft, fontWeight: 500 } }, d)))),
+          h("tbody", null, rooms.map((r) => h("tr", { key: r.id },
+            h("td", { style: { padding: 6, fontWeight: 600 } }, r.name),
+            DAYS.map((_, di) => {
+              const g = getG(r.id, di);
+              return h("td", { key: di, style: { padding: 4, textAlign: "center" } },
+                h("button", { onClick: () => cycle(r.id, r.capacity, di), style: { border: "none", cursor: "pointer", borderRadius: 8, padding: "6px 4px", width: 60, background: g > 0 ? C.claySoft : C.sandDark, color: g > 0 ? "#fff" : C.inkSoft, fontSize: 11 } }, g > 0 ? g + " نفر" : "خالی")
+              );
+            })
+          )))
+        )
+      ),
+      h("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 12, flexWrap: "wrap", gap: 8 } },
+        h("div", { style: { fontWeight: 700, color: C.clay, fontSize: 12.5 } }, "درآمد تخمینی هفته: " + weeklyTotal),
+        h("div", { style: { display: "flex", gap: 6 } },
+          h("select", { style: inputStyle, value: logMonth, onChange: (e) => setLogMonth(e.target.value) }, MONTHS.map((m) => h("option", { key: m }, m))),
+          h("button", { style: btnStyle, onClick: logToAccounting }, "ثبت در حسابداری")
+        )
+      )
+    )
+  );
 }
 
-function MaintenanceTab({ equipment, setEquipment, addFinanceEntry }) {
+function MaintenanceTab(props) {
+  const equipment = props.equipment, setEquipment = props.setEquipment, addFinanceEntry = props.addFinanceEntry;
   const [openId, setOpenId] = useState(null);
-  const [form, setForm] = useState({ desc:"", cost:"", date:"", month: MONTHS[0] });
-  const [newEq, setNewEq] = useState({ name:"", period:"" });
+  const [form, setForm] = useState({ desc: "", cost: "", date: "", month: MONTHS[0] });
+  const [newEq, setNewEq] = useState({ name: "", period: "" });
   const submitRepair = (id) => {
     if (!form.desc) return;
-    setEquipment(eqs => eqs.map(e => e.id===id ? {...e, status:"ok", lastInspected: form.date||e.lastInspected, repairs:[...(e.repairs||[]), {...form,id:uid()}]} : e));
-    if (form.cost) addFinanceEntry({ month: form.month, flow:"expense", scope:"اقامتگاه", category:"تعمیرات", amount:Number(form.cost)||0, note:form.desc });
-    setForm({desc:"",cost:"",date:"",month:MONTHS[0]}); setOpenId(null);
+    setEquipment((eqs) => eqs.map((e) => e.id === id ? Object.assign({}, e, { status: "ok", lastInspected: form.date || e.lastInspected, repairs: (e.repairs || []).concat([Object.assign({}, form, { id: uid() })]) }) : e));
+    if (form.cost) addFinanceEntry({ month: form.month, flow: "expense", scope: "اقامتگاه", category: "تعمیرات", amount: Number(form.cost) || 0, note: form.desc });
+    setForm({ desc: "", cost: "", date: "", month: MONTHS[0] }); setOpenId(null);
   };
-  const addEquipment = () => { if(!newEq.name) return; setEquipment(eqs=>[...eqs,{id:uid(),name:newEq.name,period:newEq.period||"نامشخص",lastInspected:"-",status:"due",repairs:[]}]); setNewEq({name:"",period:""}); };
-  return <Niche>
-    <SectionTitle eyebrow="پایش تجهیزات" title="لیست بازرسی و تعمیرات پیشگیرانه" />
-    {equipment.map(eq => <div key={eq.id} style={{background:C.sand,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><div style={{fontWeight:600,fontSize:13}}>{eq.name}</div><div style={{fontSize:11,color:C.inkSoft}}>دوره: {eq.period} — آخرین بازرسی: {eq.lastInspected}</div></div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <Pill text={eq.status==="ok"?"سالم":eq.status==="due"?"زمان بازرسی":"عقب‌افتاده"} tone={eq.status} />
-          <button style={{...btnStyle,padding:"5px 10px",fontSize:11}} onClick={()=>setOpenId(openId===eq.id?null:eq.id)}>ثبت تعمیر</button>
-        </div>
-      </div>
-      {openId===eq.id && <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
-        <input style={inputStyle} placeholder="شرح ایراد" value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} />
-        <input style={{...inputStyle,width:80}} placeholder="هزینه" value={form.cost} onChange={e=>setForm({...form,cost:e.target.value})} />
-        <input style={{...inputStyle,width:100}} placeholder="تاریخ" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} />
-        <select style={inputStyle} value={form.month} onChange={e=>setForm({...form,month:e.target.value})}>{MONTHS.map(m=><option key={m}>{m}</option>)}</select>
-        <button style={btnStyle} onClick={()=>submitRepair(eq.id)}>ثبت</button>
-      </div>}
-    </div>)}
-    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
-      <input style={inputStyle} placeholder="نام تجهیز جدید" value={newEq.name} onChange={e=>setNewEq({...newEq,name:e.target.value})} />
-      <input style={inputStyle} placeholder="دوره بازرسی" value={newEq.period} onChange={e=>setNewEq({...newEq,period:e.target.value})} />
-      <button style={btnStyle} onClick={addEquipment}>+</button>
-    </div>
-  </Niche>;
+  const addEquipment = () => { if (!newEq.name) return; setEquipment((eqs) => eqs.concat([{ id: uid(), name: newEq.name, period: newEq.period || "نامشخص", lastInspected: "-", status: "due", repairs: [] }])); setNewEq({ name: "", period: "" }); };
+
+  return h(Niche, null,
+    h(SectionTitle, { eyebrow: "پایش تجهیزات", title: "لیست بازرسی و تعمیرات پیشگیرانه" }),
+    equipment.map((eq) => h("div", { key: eq.id, style: { background: C.sand, borderRadius: 10, padding: "10px 12px", marginBottom: 8 } },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+        h("div", null,
+          h("div", { style: { fontWeight: 600, fontSize: 13 } }, eq.name),
+          h("div", { style: { fontSize: 11, color: C.inkSoft } }, "دوره: " + eq.period + " — آخرین بازرسی: " + eq.lastInspected)
+        ),
+        h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+          h(Pill, { text: eq.status === "ok" ? "سالم" : eq.status === "due" ? "زمان بازرسی" : "عقب‌افتاده", tone: eq.status }),
+          h("button", { style: Object.assign({}, btnStyle, { padding: "5px 10px", fontSize: 11 }), onClick: () => setOpenId(openId === eq.id ? null : eq.id) }, "ثبت تعمیر")
+        )
+      ),
+      openId === eq.id ? h("div", { style: { display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" } },
+        h("input", { style: inputStyle, placeholder: "شرح ایراد", value: form.desc, onChange: (e) => setForm(Object.assign({}, form, { desc: e.target.value })) }),
+        h("input", { style: Object.assign({}, inputStyle, { width: 80 }), placeholder: "هزینه", value: form.cost, onChange: (e) => setForm(Object.assign({}, form, { cost: e.target.value })) }),
+        h("input", { style: Object.assign({}, inputStyle, { width: 100 }), placeholder: "تاریخ", value: form.date, onChange: (e) => setForm(Object.assign({}, form, { date: e.target.value })) }),
+        h("select", { style: inputStyle, value: form.month, onChange: (e) => setForm(Object.assign({}, form, { month: e.target.value })) }, MONTHS.map((m) => h("option", { key: m }, m))),
+        h("button", { style: btnStyle, onClick: () => submitRepair(eq.id) }, "ثبت")
+      ) : null
+    )),
+    h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 } },
+      h("input", { style: inputStyle, placeholder: "نام تجهیز جدید", value: newEq.name, onChange: (e) => setNewEq(Object.assign({}, newEq, { name: e.target.value })) }),
+      h("input", { style: inputStyle, placeholder: "دوره بازرسی", value: newEq.period, onChange: (e) => setNewEq(Object.assign({}, newEq, { period: e.target.value })) }),
+      h("button", { style: btnStyle, onClick: addEquipment }, "+")
+    )
+  );
 }
 
-function AccountingTab({ finance, setFinance, financeByMonth, incomeBySource, expenseByScope }) {
-  const [form, setForm] = useState({ month:MONTHS[0], flow:"income", source:INCOME_SOURCES[0], scope:EXPENSE_SCOPES[0], category:"", amount:"" });
-  const addEntry = () => { if(!form.amount) return;
-    const e = { month:form.month, flow:form.flow, category:form.category, amount:Number(form.amount)||0 };
-    if (form.flow==="income") e.source=form.source; else e.scope=form.scope;
-    setFinance(f=>[...f,{...e,id:uid()}]); setForm({...form,category:"",amount:""});
+function AccountingTab(props) {
+  const finance = props.finance, setFinance = props.setFinance, financeByMonth = props.financeByMonth, incomeBySource = props.incomeBySource, expenseByScope = props.expenseByScope;
+  const [form, setForm] = useState({ month: MONTHS[0], flow: "income", source: INCOME_SOURCES[0], scope: EXPENSE_SCOPES[0], category: "", amount: "" });
+  const addEntry = () => {
+    if (!form.amount) return;
+    const e = { month: form.month, flow: form.flow, category: form.category, amount: Number(form.amount) || 0 };
+    if (form.flow === "income") e.source = form.source; else e.scope = form.scope;
+    setFinance((f) => f.concat([Object.assign({}, e, { id: uid() })]));
+    setForm(Object.assign({}, form, { category: "", amount: "" }));
   };
-  const removeEntry = (id) => setFinance(f=>f.filter(e=>e.id!==id));
-  const lastFin = financeByMonth[financeByMonth.length-1];
-  return <Niche>
-    <SectionTitle eyebrow="گزارش مالی" title="سود و زیان ماهانه" />
-    {financeByMonth.length>0 && <MiniChart data={financeByMonth} keys={["درآمد","هزینه"]} colors={[C.clay,C.pomegranate]} type="line" />}
-    {lastFin && <div style={{marginTop:8,fontSize:12,background:C.sand,borderRadius:10,padding:10}}>سود خالص {lastFin.month}: {lastFin["درآمد"]-lastFin["هزینه"]}</div>}
-    <div style={{display:"flex",gap:12,marginTop:14,flexWrap:"wrap"}}>
-      <div style={{flex:1,minWidth:180}}><div style={{fontWeight:700,fontSize:12.5,marginBottom:6}}>درآمد به تفکیک منبع</div>
-        {INCOME_SOURCES.map(s=><div key={s} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0"}}><span>{s}</span><b>{incomeBySource[s]||0}</b></div>)}</div>
-      <div style={{flex:1,minWidth:180}}><div style={{fontWeight:700,fontSize:12.5,marginBottom:6}}>هزینه به تفکیک نوع</div>
-        {EXPENSE_SCOPES.map(s=><div key={s} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0"}}><span>{s}</span><b>{expenseByScope[s]||0}</b></div>)}</div>
-    </div>
-    <div style={{fontWeight:700,fontSize:13,marginTop:14}}>تراکنش‌ها</div>
-    <div style={{maxHeight:200,overflowY:"auto",marginTop:6}}>
-      {finance.slice().reverse().map(e=>(
-        <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:C.sand,borderRadius:8,padding:"6px 10px",fontSize:12,marginBottom:5}}>
-          <span>{e.month} — {e.flow==="income"?e.source:e.scope} / {e.category} — {e.amount} <Pill text={e.flow==="income"?"درآمد":"هزینه"} tone={e.flow}/></span>
-          <button onClick={()=>removeEntry(e.id)} style={{border:"none",background:"none",cursor:"pointer"}}>🗑</button>
-        </div>
-      ))}
-    </div>
-    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
-      <select style={inputStyle} value={form.month} onChange={e=>setForm({...form,month:e.target.value})}>{MONTHS.map(m=><option key={m}>{m}</option>)}</select>
-      <select style={inputStyle} value={form.flow} onChange={e=>setForm({...form,flow:e.target.value})}><option value="income">درآمد</option><option value="expense">هزینه</option></select>
-      {form.flow==="income" ? <select style={inputStyle} value={form.source} onChange={e=>setForm({...form,source:e.target.value})}>{INCOME_SOURCES.map(s=><option key={s}>{s}</option>)}</select>
-        : <select style={inputStyle} value={form.scope} onChange={e=>setForm({...form,scope:e.target.value})}>{EXPENSE_SCOPES.map(s=><option key={s}>{s}</option>)}</select>}
-      <input style={inputStyle} placeholder="دسته" value={form.category} onChange={e=>setForm({...form,category:e.target.value})} />
-      <input style={{...inputStyle,width:80}} placeholder="مبلغ" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} />
-      <button style={btnStyle} onClick={addEntry}>افزودن</button>
-    </div>
-  </Niche>;
+  const removeEntry = (id) => setFinance((f) => f.filter((e) => e.id !== id));
+  const lastFin = financeByMonth[financeByMonth.length - 1];
+
+  return h(Niche, null,
+    h(SectionTitle, { eyebrow: "گزارش مالی", title: "سود و زیان ماهانه" }),
+    financeByMonth.length > 0 ? h(MiniChart, { data: financeByMonth, keys: ["درآمد", "هزینه"], colors: [C.clay, C.pomegranate], type: "line" }) : null,
+    lastFin ? h("div", { style: { marginTop: 8, fontSize: 12, background: C.sand, borderRadius: 10, padding: 10 } }, "سود خالص " + lastFin.month + ": " + (lastFin["درآمد"] - lastFin["هزینه"])) : null,
+    h("div", { style: { display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap" } },
+      h("div", { style: { flex: 1, minWidth: 180 } },
+        h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "درآمد به تفکیک منبع"),
+        INCOME_SOURCES.map((s) => h("div", { key: s, style: { display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" } }, h("span", null, s), h("b", null, incomeBySource[s] || 0)))
+      ),
+      h("div", { style: { flex: 1, minWidth: 180 } },
+        h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "هزینه به تفکیک نوع"),
+        EXPENSE_SCOPES.map((s) => h("div", { key: s, style: { display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" } }, h("span", null, s), h("b", null, expenseByScope[s] || 0)))
+      )
+    ),
+    h("div", { style: { fontWeight: 700, fontSize: 13, marginTop: 14 } }, "تراکنش‌ها"),
+    h("div", { style: { maxHeight: 200, overflowY: "auto", marginTop: 6 } },
+      finance.slice().reverse().map((e) => h("div", { key: e.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 8, padding: "6px 10px", fontSize: 12, marginBottom: 5 } },
+        h("span", null, e.month + " — " + (e.flow === "income" ? e.source : e.scope) + " / " + e.category + " — " + e.amount + " ", h(Pill, { text: e.flow === "income" ? "درآمد" : "هزینه", tone: e.flow })),
+        h("button", { onClick: () => removeEntry(e.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
+      ))
+    ),
+    h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 } },
+      h("select", { style: inputStyle, value: form.month, onChange: (e) => setForm(Object.assign({}, form, { month: e.target.value })) }, MONTHS.map((m) => h("option", { key: m }, m))),
+      h("select", { style: inputStyle, value: form.flow, onChange: (e) => setForm(Object.assign({}, form, { flow: e.target.value })) }, h("option", { value: "income" }, "درآمد"), h("option", { value: "expense" }, "هزینه")),
+      form.flow === "income"
+        ? h("select", { style: inputStyle, value: form.source, onChange: (e) => setForm(Object.assign({}, form, { source: e.target.value })) }, INCOME_SOURCES.map((s) => h("option", { key: s }, s)))
+        : h("select", { style: inputStyle, value: form.scope, onChange: (e) => setForm(Object.assign({}, form, { scope: e.target.value })) }, EXPENSE_SCOPES.map((s) => h("option", { key: s }, s))),
+      h("input", { style: inputStyle, placeholder: "دسته", value: form.category, onChange: (e) => setForm(Object.assign({}, form, { category: e.target.value })) }),
+      h("input", { style: Object.assign({}, inputStyle, { width: 80 }), placeholder: "مبلغ", value: form.amount, onChange: (e) => setForm(Object.assign({}, form, { amount: e.target.value })) }),
+      h("button", { style: btnStyle, onClick: addEntry }, "افزودن")
+    )
+  );
 }
 
-function InventoryTab({ inventory, setInventory, addFinanceEntry }) {
-  const [newItem, setNewItem] = useState({name:"",qty:"",min:"",unit:"",cost:"",month:MONTHS[0]});
-  const addItem = () => { if(!newItem.name) return;
-    setInventory(inv=>[...inv,{id:uid(),name:newItem.name,qty:Number(newItem.qty)||0,min:Number(newItem.min)||0,unit:newItem.unit||"عدد"}]);
-    if (newItem.cost) addFinanceEntry({ month:newItem.month, flow:"expense", scope:"اقامتگاه", category:"خرید انبار", amount:Number(newItem.cost)||0, note:newItem.name });
-    setNewItem({name:"",qty:"",min:"",unit:"",cost:"",month:MONTHS[0]});
+function InventoryTab(props) {
+  const inventory = props.inventory, setInventory = props.setInventory, addFinanceEntry = props.addFinanceEntry;
+  const [newItem, setNewItem] = useState({ name: "", qty: "", min: "", unit: "", cost: "", month: MONTHS[0] });
+  const addItem = () => {
+    if (!newItem.name) return;
+    setInventory((inv) => inv.concat([{ id: uid(), name: newItem.name, qty: Number(newItem.qty) || 0, min: Number(newItem.min) || 0, unit: newItem.unit || "عدد" }]));
+    if (newItem.cost) addFinanceEntry({ month: newItem.month, flow: "expense", scope: "اقامتگاه", category: "خرید انبار", amount: Number(newItem.cost) || 0, note: newItem.name });
+    setNewItem({ name: "", qty: "", min: "", unit: "", cost: "", month: MONTHS[0] });
   };
-  const removeItem = (id) => setInventory(inv=>inv.filter(i=>i.id!==id));
-  const bump = (id,d) => setInventory(inv=>inv.map(it=>it.id===id?{...it,qty:Math.max(0,Number(it.qty)+d)}:it));
-  return <Niche>
-    <SectionTitle eyebrow="موجودی انبار" title="کالاها و نقطه سفارش مجدد" />
-    {inventory.map(it=>{const low=Number(it.qty)<Number(it.min);return (
-      <div key={it.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:C.sand,borderRadius:10,padding:"10px 12px",marginBottom:6}}>
-        <div><div style={{fontWeight:600,fontSize:13}}>{it.name}</div><div style={{fontSize:11,color:C.inkSoft}}>حداقل: {it.min} {it.unit}</div></div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          {low && <Pill text="کمبود" tone="overdue"/>}
-          <button onClick={()=>bump(it.id,-1)} style={btnCircle}>-</button>
-          <div style={{minWidth:30,textAlign:"center",fontWeight:700}}>{it.qty}</div>
-          <button onClick={()=>bump(it.id,1)} style={btnCircle}>+</button>
-          <button onClick={()=>removeItem(it.id)} style={{border:"none",background:"none",cursor:"pointer"}}>🗑</button>
-        </div>
-      </div>
-    );})}
-    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
-      <input style={inputStyle} placeholder="نام کالا" value={newItem.name} onChange={e=>setNewItem({...newItem,name:e.target.value})} />
-      <input style={{...inputStyle,width:60}} placeholder="موجودی" value={newItem.qty} onChange={e=>setNewItem({...newItem,qty:e.target.value})} />
-      <input style={{...inputStyle,width:60}} placeholder="حداقل" value={newItem.min} onChange={e=>setNewItem({...newItem,min:e.target.value})} />
-      <input style={{...inputStyle,width:55}} placeholder="واحد" value={newItem.unit} onChange={e=>setNewItem({...newItem,unit:e.target.value})} />
-      <input style={{...inputStyle,width:80}} placeholder="هزینه خرید" value={newItem.cost} onChange={e=>setNewItem({...newItem,cost:e.target.value})} />
-      <select style={inputStyle} value={newItem.month} onChange={e=>setNewItem({...newItem,month:e.target.value})}>{MONTHS.map(m=><option key={m}>{m}</option>)}</select>
-      <button style={btnStyle} onClick={addItem}>+</button>
-    </div>
-  </Niche>;
+  const removeItem = (id) => setInventory((inv) => inv.filter((i) => i.id !== id));
+  const bump = (id, d) => setInventory((inv) => inv.map((it) => it.id === id ? Object.assign({}, it, { qty: Math.max(0, Number(it.qty) + d) }) : it));
+
+  return h(Niche, null,
+    h(SectionTitle, { eyebrow: "موجودی انبار", title: "کالاها و نقطه سفارش مجدد" }),
+    inventory.map((it) => {
+      const low = Number(it.qty) < Number(it.min);
+      return h("div", { key: it.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 10, padding: "10px 12px", marginBottom: 6 } },
+        h("div", null, h("div", { style: { fontWeight: 600, fontSize: 13 } }, it.name), h("div", { style: { fontSize: 11, color: C.inkSoft } }, "حداقل: " + it.min + " " + it.unit)),
+        h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+          low ? h(Pill, { text: "کمبود", tone: "overdue" }) : null,
+          h("button", { onClick: () => bump(it.id, -1), style: btnCircle }, "-"),
+          h("div", { style: { minWidth: 30, textAlign: "center", fontWeight: 700 } }, it.qty),
+          h("button", { onClick: () => bump(it.id, 1), style: btnCircle }, "+"),
+          h("button", { onClick: () => removeItem(it.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
+        )
+      );
+    }),
+    h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 } },
+      h("input", { style: inputStyle, placeholder: "نام کالا", value: newItem.name, onChange: (e) => setNewItem(Object.assign({}, newItem, { name: e.target.value })) }),
+      h("input", { style: Object.assign({}, inputStyle, { width: 60 }), placeholder: "موجودی", value: newItem.qty, onChange: (e) => setNewItem(Object.assign({}, newItem, { qty: e.target.value })) }),
+      h("input", { style: Object.assign({}, inputStyle, { width: 60 }), placeholder: "حداقل", value: newItem.min, onChange: (e) => setNewItem(Object.assign({}, newItem, { min: e.target.value })) }),
+      h("input", { style: Object.assign({}, inputStyle, { width: 55 }), placeholder: "واحد", value: newItem.unit, onChange: (e) => setNewItem(Object.assign({}, newItem, { unit: e.target.value })) }),
+      h("input", { style: Object.assign({}, inputStyle, { width: 80 }), placeholder: "هزینه خرید", value: newItem.cost, onChange: (e) => setNewItem(Object.assign({}, newItem, { cost: e.target.value })) }),
+      h("select", { style: inputStyle, value: newItem.month, onChange: (e) => setNewItem(Object.assign({}, newItem, { month: e.target.value })) }, MONTHS.map((m) => h("option", { key: m }, m))),
+      h("button", { style: btnStyle, onClick: addItem }, "+")
+    )
+  );
 }
 
-function CarbonTab({ carbon, setCarbon, carbonSeries }) {
-  const [form, setForm] = useState({month:MONTHS[0],water:"",electricity:"",gas:""});
-  const addReading = () => { if(!form.electricity&&!form.gas&&!form.water) return; setCarbon(c=>[...c.filter(r=>r.month!==form.month),{...form,id:uid()}]); setForm({month:MONTHS[0],water:"",electricity:"",gas:""}); };
-  return <Niche>
-    <SectionTitle eyebrow="مصرف انرژی" title="روند ردپای کربن ماهانه (kg CO₂)" />
-    {carbonSeries.length>0 ? <MiniChart data={carbonSeries} keys={["کربن"]} colors={[C.sage]} type="line" /> : <div style={{fontSize:12,color:C.inkSoft}}>هنوز قرائتی ثبت نشده.</div>}
-    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:12}}>
-      <select style={inputStyle} value={form.month} onChange={e=>setForm({...form,month:e.target.value})}>{MONTHS.map(m=><option key={m}>{m}</option>)}</select>
-      <input style={{...inputStyle,width:80}} placeholder="آب" value={form.water} onChange={e=>setForm({...form,water:e.target.value})} />
-      <input style={{...inputStyle,width:80}} placeholder="برق" value={form.electricity} onChange={e=>setForm({...form,electricity:e.target.value})} />
-      <input style={{...inputStyle,width:80}} placeholder="گاز" value={form.gas} onChange={e=>setForm({...form,gas:e.target.value})} />
-      <button style={btnStyle} onClick={addReading}>ثبت ماه</button>
-    </div>
-  </Niche>;
+function CarbonTab(props) {
+  const carbon = props.carbon, setCarbon = props.setCarbon, carbonSeries = props.carbonSeries;
+  const [form, setForm] = useState({ month: MONTHS[0], water: "", electricity: "", gas: "" });
+  const addReading = () => {
+    if (!form.electricity && !form.gas && !form.water) return;
+    setCarbon((c) => c.filter((r) => r.month !== form.month).concat([Object.assign({}, form, { id: uid() })]));
+    setForm({ month: MONTHS[0], water: "", electricity: "", gas: "" });
+  };
+  return h(Niche, null,
+    h(SectionTitle, { eyebrow: "مصرف انرژی", title: "روند ردپای کربن ماهانه (kg CO₂)" }),
+    carbonSeries.length > 0 ? h(MiniChart, { data: carbonSeries, keys: ["کربن"], colors: [C.sage], type: "line" }) : h("div", { style: { fontSize: 12, color: C.inkSoft } }, "هنوز قرائتی ثبت نشده."),
+    h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 } },
+      h("select", { style: inputStyle, value: form.month, onChange: (e) => setForm(Object.assign({}, form, { month: e.target.value })) }, MONTHS.map((m) => h("option", { key: m }, m))),
+      h("input", { style: Object.assign({}, inputStyle, { width: 80 }), placeholder: "آب", value: form.water, onChange: (e) => setForm(Object.assign({}, form, { water: e.target.value })) }),
+      h("input", { style: Object.assign({}, inputStyle, { width: 80 }), placeholder: "برق", value: form.electricity, onChange: (e) => setForm(Object.assign({}, form, { electricity: e.target.value })) }),
+      h("input", { style: Object.assign({}, inputStyle, { width: 80 }), placeholder: "گاز", value: form.gas, onChange: (e) => setForm(Object.assign({}, form, { gas: e.target.value })) }),
+      h("button", { style: btnStyle, onClick: addReading }, "ثبت ماه")
+    )
+  );
 }
 
-function EventsTab({ events, setEvents }) {
-  const toggle = (id) => setEvents(evs=>evs.map(e=>e.id===id?{...e,status:e.status==="done"?"planned":"done"}:e));
-  const removeEvent = (id) => setEvents(evs=>evs.filter(e=>e.id!==id));
-  const total = events.reduce((s,e)=>s+Number(e.budget||0),0);
-  return <Niche>
+function EventsTab(props) {
+  const events = props.events, setEvents = props.setEvents;
+  const toggle = (id) => setEvents((evs) => evs.map((e) => e.id === id ? Object.assign({}, e, { status: e.status === "done" ? "planned" : "done" }) : e));
+  const removeEvent = (id) => setEvents((evs) => evs.filter((e) => e.id !== id));
+  const total = events.reduce((s, e) => s + Number(e.budget || 0), 0);
+  return h(Niche, null,
+    h(SectionTitle, { eyebrow: "تقویم سالانه", title: "رویدادهای پیشنهادی و بودجه" }),
+    events.map((ev) => h("div", { key: ev.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 10, padding: "9px 12px", marginBottom: 6 } },
+      h("div", null, h("div", { style: { fontWeight: 600, fontSize: 13 } }, ev.title), h("div", { style: { fontSize: 11, color: C.inkSoft } }, "فصل: " + ev.season + " — بودجه: " + ev.budget)),
+      h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+        h("button", { onClick: () => toggle(ev.id), style: { border: "none", background: "none", cursor: "pointer" } }, h(Pill, { text: ev.status === "done" ? "برگزار شد" : "برنامه‌ریزی‌شده", tone: ev.status })),
+        h("button", { onClick: () => removeEvent(ev.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
+      )
+    )),
+    h("div", { style: { fontWeight: 700, color: C.clay, marginTop: 8 } }, "جمع بودجه سالانه: " + total)
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+}
+</script>
+</body>
+</html>
