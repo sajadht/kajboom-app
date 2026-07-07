@@ -1,4 +1,4 @@
-const CACHE = "kajboom-v2";
+const CACHE = "kajboom-v3";
 const SHELL = ["./", "./index.html", "./manifest.json", "./icons/icon-192.png", "./icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -13,11 +13,18 @@ self.addEventListener("activate", (e) => {
   self.clients.claim();
 });
 
+// Network-first for same-origin app files: always try to get the latest version first;
+// only fall back to the cached copy if the network request fails (e.g. offline).
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  // Never cache Firestore/Firebase network calls; only cache same-origin app shell files.
   if (url.origin !== location.origin) return;
   e.respondWith(
-    caches.match(e.request).then((cached) => cached || fetch(e.request))
+    fetch(e.request)
+      .then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(e.request, copy));
+        return res;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
