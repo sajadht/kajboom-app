@@ -263,7 +263,7 @@ const TABS = [
 function App() {
   const [tab, setTab] = useState("overview");
   const rr = useDoc("rooms", DEFAULT_ROOMS); const rooms = rr[0], setRooms = rr[1], roomsL = rr[2];
-  const rm = useDoc("reservations", {}); const resMap = rm[0], setResMap = rm[1], resL = rm[2];
+  const sy = useDoc("stays", []); const stays = sy[0], setStays = sy[1], syL = sy[2];
   const eq = useDoc("equipment", DEFAULT_EQUIPMENT); const equipment = eq[0], setEquipment = eq[1], eqL = eq[2];
   const iv = useDoc("inventory", DEFAULT_INVENTORY); const inventory = iv[0], setInventory = iv[1], invL = iv[2];
   const fn = useDoc("finance", DEFAULT_FINANCE); const finance = fn[0], setFinance = fn[1], finL = fn[2], finErr = fn[3];
@@ -275,7 +275,7 @@ function App() {
   const ac = useDoc("accounts", DEFAULT_ACCOUNTS); const accounts = ac[0], setAccounts = ac[1], accL = ac[2];
 
   const addFinanceEntry = (e) => setFinance((f) => f.concat([Object.assign({}, e, { id: uid() })]));
-  const allLoaded = roomsL && resL && eqL && invL && finL && carbonL && evL && accL && stL && grL && guL;
+  const allLoaded = roomsL && syL && eqL && invL && finL && carbonL && evL && accL && stL && grL && guL;
 
   const financeByMonth = useMemo(() => {
     const map = {};
@@ -309,13 +309,12 @@ function App() {
   }, [finance, accounts]);
   const guestNightsForMonthKey = (monthKey) => {
     let total = 0;
-    Object.keys(resMap).forEach((k) => {
-      const parts = k.split(":");
-      const dateISO = parts[1];
-      if (dateISO && dateISO.slice(0, 7) === monthKey) {
-        const raw = resMap[k];
-        const g = typeof raw === "number" ? raw : (raw ? raw.guests : 0);
-        total += Number(g) || 0;
+    stays.forEach((s) => {
+      let d = new Date(s.checkIn + "T00:00:00");
+      const end = new Date(s.checkOut + "T00:00:00");
+      while (d < end) {
+        if (isoLocal(d).slice(0, 7) === monthKey) total += Number(s.guests) || 0;
+        d.setDate(d.getDate() + 1);
       }
     });
     return total;
@@ -326,7 +325,8 @@ function App() {
     const guestNights = guestNightsForMonthKey(r.monthKey);
     const perGuest = guestNights > 0 ? totalCO2 / guestNights : null;
     return Object.assign({}, r, { month: r.monthKey, "کربن": +totalCO2.toFixed(0), guestNights: guestNights, perGuest: perGuest });
-  }), [carbon, resMap]);
+  }), [carbon, stays]);
+
 
   const equipStatus = (e) => {
     if (!e.intervalDays || !e.lastChecked) return "due";
@@ -379,8 +379,8 @@ function App() {
         )
       ) : null,
 
-      tab === "reservations" ? h(ReservationsTab, { rooms: rooms, setRooms: setRooms, resMap: resMap, setResMap: setResMap, addFinanceEntry: addFinanceEntry, accounts: accounts, guests: guests, setGuests: setGuests }) : null,
-      tab === "guests" ? h(GuestsTab, { guests: guests, setGuests: setGuests, resMap: resMap, setResMap: setResMap, rooms: rooms, addFinanceEntry: addFinanceEntry, accounts: accounts }) : null,
+      tab === "reservations" ? h(ReservationsTab, { rooms: rooms, setRooms: setRooms, stays: stays, setStays: setStays, addFinanceEntry: addFinanceEntry, accounts: accounts, guests: guests, setGuests: setGuests }) : null,
+      tab === "guests" ? h(GuestsTab, { guests: guests, setGuests: setGuests, stays: stays, setStays: setStays, rooms: rooms, addFinanceEntry: addFinanceEntry, accounts: accounts }) : null,
       tab === "maintenance" ? h(MaintenanceTab, { equipment: equipment, setEquipment: setEquipment, addFinanceEntry: addFinanceEntry, accounts: accounts, equipStatus: equipStatus }) : null,
       tab === "accounting" ? h(AccountingTab, { finance: finance, setFinance: setFinance, financeByMonth: financeByMonth, incomeByCategory: incomeByCategory, expenseByCategory: expenseByCategory, accounts: accounts, setAccounts: setAccounts, balanceByAccount: balanceByAccount }) : null,
       tab === "inventory" ? h(InventoryTab, { inventory: inventory, setInventory: setInventory, addFinanceEntry: addFinanceEntry, accounts: accounts }) : null,
@@ -392,12 +392,13 @@ function App() {
 }
 
 function ReservationsTab(props) {
-  const rooms = props.rooms, setRooms = props.setRooms, resMap = props.resMap, setResMap = props.setResMap, addFinanceEntry = props.addFinanceEntry, accounts = props.accounts, guests = props.guests, setGuests = props.setGuests;
+  const rooms = props.rooms, setRooms = props.setRooms, stays = props.stays, setStays = props.setStays, addFinanceEntry = props.addFinanceEntry, accounts = props.accounts, guests = props.guests, setGuests = props.setGuests;
   const [editRoom, setEditRoom] = useState(null);
   const [priceDraft, setPriceDraft] = useState("");
   const [logAccount, setLogAccount] = useState(accounts[0] || "");
   const [weekStart, setWeekStart] = useState(() => getSaturday(new Date()));
-  const [selected, setSelected] = useState(null);
+  const [pendingCheckin, setPendingCheckin] = useState({});
+  const [selected, setSelected] = useState(null); // { mode:'new', roomId, roomName, checkIn, checkOut, checkInLabel, checkOutLabel } | { mode:'edit', stay, roomName }
   const [form, setForm] = useState({ guests: "1", name: "", phone: "", notes: "" });
 
   const weekDates = useMemo(() => {
@@ -406,20 +407,15 @@ function ReservationsTab(props) {
     return arr;
   }, [weekStart]);
 
-  const key = (rid, dateISO) => rid + ":" + dateISO;
-  const getEntry = (rid, dateISO) => {
-    const raw = resMap[key(rid, dateISO)];
-    if (!raw) return { guests: 0, name: "", phone: "" };
-    if (typeof raw === "number") return { guests: raw, name: "", phone: "" };
-    return raw;
-  };
+  const stayAt = (roomId, dateISO) => stays.find((s) => s.roomId === roomId && dateISO >= s.checkIn && dateISO < s.checkOut);
+  const checkoutHereFrom = (roomId, dateISO) => stays.find((s) => s.roomId === roomId && s.checkOut === dateISO);
 
   const weeklyTotal = useMemo(() => {
     let s = 0;
-    rooms.forEach((r) => weekDates.forEach((d) => { s += getEntry(r.id, isoLocal(d)).guests * r.pricePerPerson; }));
+    rooms.forEach((r) => weekDates.forEach((d) => { const st = stayAt(r.id, isoLocal(d)); if (st) s += (Number(st.guests) || 0) * r.pricePerPerson; }));
     return s;
     // eslint-disable-next-line
-  }, [rooms, resMap, weekDates]);
+  }, [rooms, stays, weekDates]);
 
   const savePrice = (id) => { setRooms((rs) => rs.map((r) => r.id === id ? Object.assign({}, r, { pricePerPerson: Number(priceDraft) || r.pricePerPerson }) : r)); setEditRoom(null); };
   const logToAccounting = () => { if (weeklyTotal > 0) addFinanceEntry({ date: todayISO(), flow: "income", category: "اقامت", account: logAccount, amount: weeklyTotal, note: "درآمد رزرو هفتگی" }); };
@@ -429,20 +425,10 @@ function ReservationsTab(props) {
     if (!p) return null;
     return guests.find((g) => g.phone === p) || null;
   };
-
-  const openCell = (r, d) => {
-    const dateISO = isoLocal(d);
-    const entry = getEntry(r.id, dateISO);
-    setSelected({ roomId: r.id, dateISO: dateISO, roomName: r.name, dateLabel: jalaliLabel(d) });
-    const known = entry.phone ? findGuestByPhone(entry.phone) : null;
-    setForm({ guests: String(entry.guests || 0), name: entry.name || (known ? known.name : ""), phone: entry.phone || "", notes: entry.notes || (known ? known.notes : "") || "" });
-  };
-
   const autofillFromPhone = () => {
     const known = findGuestByPhone(form.phone);
     if (known) setForm(Object.assign({}, form, { name: known.name, notes: known.notes || "" }));
   };
-
   const upsertGuestDirectory = (roomName, dateISO) => {
     const phone = (form.phone || "").trim();
     if (!phone) return;
@@ -457,17 +443,41 @@ function ReservationsTab(props) {
     });
   };
 
-  const saveCell = () => {
-    if (!selected) return;
-    setResMap((m) => { const n = Object.assign({}, m); n[key(selected.roomId, selected.dateISO)] = { guests: Number(form.guests) || 0, name: form.name, phone: form.phone, notes: form.notes }; return n; });
-    upsertGuestDirectory(selected.roomName, selected.dateISO);
+  const onCellClick = (room, d) => {
+    const dateISO = isoLocal(d);
+    const occupied = stayAt(room.id, dateISO);
+    if (occupied) {
+      setSelected({ mode: "edit", stay: occupied, roomName: room.name });
+      setForm({ guests: String(occupied.guests || 1), name: occupied.name || "", phone: occupied.phone || "", notes: occupied.notes || "" });
+      return;
+    }
+    const pending = pendingCheckin[room.id];
+    if (pending) {
+      if (pending === dateISO) { setPendingCheckin((p) => Object.assign({}, p, { [room.id]: null })); return; }
+      if (dateISO > pending) {
+        setSelected({ mode: "new", roomId: room.id, roomName: room.name, checkIn: pending, checkOut: dateISO, checkInLabel: jalaliLabel(new Date(pending + "T00:00:00")), checkOutLabel: jalaliLabel(d) });
+        setForm({ guests: "1", name: "", phone: "", notes: "" });
+        setPendingCheckin((p) => Object.assign({}, p, { [room.id]: null }));
+        return;
+      }
+      setPendingCheckin((p) => Object.assign({}, p, { [room.id]: dateISO }));
+      return;
+    }
+    setPendingCheckin((p) => Object.assign({}, p, { [room.id]: dateISO }));
+  };
+
+  const saveNewStay = () => {
+    const stay = { id: uid(), roomId: selected.roomId, checkIn: selected.checkIn, checkOut: selected.checkOut, guests: Number(form.guests) || 1, name: form.name, phone: form.phone, notes: form.notes, settled: false };
+    setStays((s) => s.concat([stay]));
+    upsertGuestDirectory(selected.roomName, selected.checkIn);
     setSelected(null);
   };
-  const clearCell = () => {
-    if (!selected) return;
-    setResMap((m) => { const n = Object.assign({}, m); n[key(selected.roomId, selected.dateISO)] = { guests: 0, name: "", phone: "", notes: "" }; return n; });
+  const saveEditStay = () => {
+    setStays((s) => s.map((x) => x.id === selected.stay.id ? Object.assign({}, x, { guests: Number(form.guests) || 1, name: form.name, phone: form.phone, notes: form.notes }) : x));
+    upsertGuestDirectory(selected.roomName, selected.stay.checkIn);
     setSelected(null);
   };
+  const cancelStay = () => { setStays((s) => s.filter((x) => x.id !== selected.stay.id)); setSelected(null); };
 
   const weekLabel = jalaliLabel(weekDates[0]) + " تا " + jalaliLabel(weekDates[6]);
 
@@ -488,7 +498,7 @@ function ReservationsTab(props) {
       ))
     ),
     h(Niche, null,
-      h(SectionTitle, { eyebrow: "تقویم اشغال", title: "اتاق × روز" }),
+      h(SectionTitle, { eyebrow: "تقویم ورود/خروج", title: "یک‌بار کلیک = ورود، کلیک دوم روی روز بعدی = خروج" }),
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 } },
         h("button", { style: Object.assign({}, btnStyle, { padding: "5px 10px", fontSize: 11 }), onClick: () => setWeekStart((w) => { const n = new Date(w); n.setDate(w.getDate() - 7); return n; }) }, "◀ هفتهٔ قبل"),
         h("div", { style: { fontSize: 12.5, fontWeight: 700, color: C.ink } }, weekLabel),
@@ -500,10 +510,23 @@ function ReservationsTab(props) {
           h("tbody", null, rooms.map((r) => h("tr", { key: r.id },
             h("td", { style: { padding: 6, fontWeight: 600 } }, r.name),
             weekDates.map((d, di) => {
-              const entry = getEntry(r.id, isoLocal(d));
-              const g = entry.guests;
+              const dateISO = isoLocal(d);
+              const stay = stayAt(r.id, dateISO);
+              const isPending = pendingCheckin[r.id] === dateISO;
+              const co = checkoutHereFrom(r.id, dateISO);
+              let label, bg, fg;
+              if (stay) {
+                label = (stay.checkIn === dateISO ? "ورود " : "") + stay.guests + " نفر" + (stay.name ? " - " + stay.name.split(" ")[0] : "");
+                bg = C.claySoft; fg = "#fff";
+              } else if (isPending) {
+                label = "ورود ✓"; bg = C.gold; fg = "#fff";
+              } else if (co) {
+                label = "خروج / خالی"; bg = C.sandDark; fg = C.inkSoft;
+              } else {
+                label = "خالی"; bg = C.sandDark; fg = C.inkSoft;
+              }
               return h("td", { key: di, style: { padding: 4, textAlign: "center" } },
-                h("button", { onClick: () => openCell(r, d), style: { border: "none", cursor: "pointer", borderRadius: 8, padding: "6px 4px", width: 66, background: g > 0 ? C.claySoft : C.sandDark, color: g > 0 ? "#fff" : C.inkSoft, fontSize: 10.5 } }, g > 0 ? (g + " نفر" + (entry.name ? " - " + entry.name.split(" ")[0] : "")) : "خالی")
+                h("button", { onClick: () => onCellClick(r, d), style: { border: "none", cursor: "pointer", borderRadius: 8, padding: "6px 4px", width: 70, background: bg, color: fg, fontSize: 10 } }, label)
               );
             })
           )))
@@ -518,7 +541,10 @@ function ReservationsTab(props) {
       )
     ),
     selected ? h(Niche, { style: { marginTop: 14 } },
-      h(SectionTitle, { eyebrow: selected.roomName + " — " + selected.dateLabel, title: "جزئیات رزرو" }),
+      h(SectionTitle, {
+        eyebrow: selected.roomName + " — " + (selected.mode === "new" ? (selected.checkInLabel + " تا " + selected.checkOutLabel) : (jalaliLabel(new Date(selected.stay.checkIn + "T00:00:00")) + " تا " + jalaliLabel(new Date(selected.stay.checkOut + "T00:00:00")))),
+        title: selected.mode === "new" ? "ثبت رزرو جدید" : "جزئیات رزرو"
+      }),
       h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
         h("input", { style: Object.assign({}, inputStyle, { width: 70 }), placeholder: "تعداد نفر", value: form.guests, onChange: (e) => setForm(Object.assign({}, form, { guests: e.target.value })) }),
         h("input", { style: inputStyle, placeholder: "نام مهمان", value: form.name, onChange: (e) => setForm(Object.assign({}, form, { name: e.target.value })) }),
@@ -526,10 +552,14 @@ function ReservationsTab(props) {
         findGuestByPhone(form.phone) ? h("button", { onClick: autofillFromPhone, style: { ...btnStyle, background: C.sage } }, "مهمان قبلی — پر کن") : null
       ),
       findGuestByPhone(form.phone) ? h("div", { style: { fontSize: 11, color: C.sage, marginTop: 6 } }, "این مهمان قبلاً " + (findGuestByPhone(form.phone).visits || []).length + " بار اومده.") : null,
-      h("textarea", { style: { ...inputStyle, width: "100%", marginTop: 8, minHeight: 50, fontFamily: "inherit" }, placeholder: "علاقه‌مندی‌ها و نکات برای دفعهٔ بعد (مثلاً: اتاق آرام، صبحانهٔ زودتر، حساسیت غذایی و ...)", value: form.notes, onChange: (e) => setForm(Object.assign({}, form, { notes: e.target.value })) }),
+      h("textarea", { style: { ...inputStyle, width: "100%", marginTop: 8, minHeight: 50, fontFamily: "inherit" }, placeholder: "علاقه‌مندی‌ها و نکات برای دفعهٔ بعد", value: form.notes, onChange: (e) => setForm(Object.assign({}, form, { notes: e.target.value })) }),
       h("div", { style: { display: "flex", gap: 6, marginTop: 10 } },
-        h("button", { style: btnStyle, onClick: saveCell }, "ذخیره"),
-        h("button", { style: Object.assign({}, btnStyle, { background: C.pomegranate }), onClick: clearCell }, "خالی‌کردن"),
+        selected.mode === "new"
+          ? h("button", { style: btnStyle, onClick: saveNewStay }, "ذخیره رزرو")
+          : h(React.Fragment, null,
+              h("button", { style: btnStyle, onClick: saveEditStay }, "ذخیره تغییرات"),
+              h("button", { style: Object.assign({}, btnStyle, { background: C.pomegranate }), onClick: cancelStay }, "لغو این رزرو")
+            ),
         h("button", { style: Object.assign({}, btnStyle, { background: C.inkSoft }), onClick: () => setSelected(null) }, "بستن")
       )
     ) : null
@@ -538,7 +568,7 @@ function ReservationsTab(props) {
 
 function GuestsTab(props) {
   const guests = props.guests, setGuests = props.setGuests;
-  const resMap = props.resMap, setResMap = props.setResMap, rooms = props.rooms, addFinanceEntry = props.addFinanceEntry, accounts = props.accounts;
+  const stays = props.stays, setStays = props.setStays, rooms = props.rooms, addFinanceEntry = props.addFinanceEntry, accounts = props.accounts;
   const [query, setQuery] = useState("");
   const [editId, setEditId] = useState(null);
   const [draft, setDraft] = useState({ name: "", phone: "", notes: "" });
@@ -559,29 +589,20 @@ function GuestsTab(props) {
   const saveEdit = () => { setGuests((gs) => gs.map((g) => g.id === editId ? Object.assign({}, g, draft) : g)); setEditId(null); };
   const removeGuest = (id) => setGuests((gs) => gs.filter((g) => g.id !== id));
 
-  const getUnsettledStays = (guest) => {
-    const out = [];
-    Object.keys(resMap).forEach((k) => {
-      const v = resMap[k];
-      if (!v || typeof v !== "object") return;
-      if (v.phone !== guest.phone || v.settled || !v.guests) return;
-      const parts = k.split(":");
-      const roomId = parts[0], dateISO = parts[1];
-      const room = rooms.find((r) => r.id === roomId);
-      out.push({ key: k, roomId: roomId, dateISO: dateISO, room: room, guestsCount: v.guests });
-    });
-    return out.sort((a, b) => a.dateISO < b.dateISO ? -1 : 1);
-  };
+  const nightsOf = (stay) => Math.max(1, Math.round((new Date(stay.checkOut + "T00:00:00") - new Date(stay.checkIn + "T00:00:00")) / 86400000));
+  const getUnsettledStays = (guest) => stays.filter((s) => s.phone === guest.phone && !s.settled && s.guests > 0)
+    .map((s) => Object.assign({}, s, { room: rooms.find((r) => r.id === s.roomId), nights: nightsOf(s) }))
+    .sort((a, b) => a.checkIn < b.checkIn ? -1 : 1);
 
   const openSettle = (guest) => {
-    const stays = getUnsettledStays(guest);
-    const roomTotal = stays.reduce((s, st) => s + (st.room ? st.guestsCount * st.room.pricePerPerson : 0), 0);
+    const pending = getUnsettledStays(guest);
+    const roomTotal = pending.reduce((s, st) => s + (st.room ? st.guests * st.nights * st.room.pricePerPerson : 0), 0);
     setSettlingId(guest.id);
     setSettleForm({ room: String(roomTotal), food: "", shop: "", discount: "", account: accounts[0] || "" });
   };
 
   const finalizeSettle = (guest) => {
-    const stays = getUnsettledStays(guest);
+    const pending = getUnsettledStays(guest);
     const roomAmt = Number(settleForm.room) || 0;
     const foodAmt = Number(settleForm.food) || 0;
     const shopAmt = Number(settleForm.shop) || 0;
@@ -592,7 +613,8 @@ function GuestsTab(props) {
     if (roomAmt > 0) addFinanceEntry({ date: date, flow: "income", category: "اقامت", account: settleForm.account, amount: applyDiscount(roomAmt), note: "تسویه اقامت " + guest.name });
     if (foodAmt > 0) addFinanceEntry({ date: date, flow: "income", category: "غذای بیرون", account: settleForm.account, amount: applyDiscount(foodAmt), note: "تسویه غذا " + guest.name });
     if (shopAmt > 0) addFinanceEntry({ date: date, flow: "income", category: "فروشگاه", account: settleForm.account, amount: applyDiscount(shopAmt), note: "تسویه فروشگاه " + guest.name });
-    setResMap((m) => { const n = Object.assign({}, m); stays.forEach((st) => { n[st.key] = Object.assign({}, n[st.key], { settled: true }); }); return n; });
+    const settledIds = pending.map((st) => st.id);
+    setStays((s) => s.map((x) => settledIds.indexOf(x.id) !== -1 ? Object.assign({}, x, { settled: true }) : x));
     setSettlingId(null);
   };
 
