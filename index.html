@@ -397,9 +397,9 @@ function ReservationsTab(props) {
   const [priceDraft, setPriceDraft] = useState("");
   const [logAccount, setLogAccount] = useState(accounts[0] || "");
   const [weekStart, setWeekStart] = useState(() => getSaturday(new Date()));
-  const [pendingCheckin, setPendingCheckin] = useState({});
-  const [selected, setSelected] = useState(null); // { mode:'new', roomId, roomName, checkIn, checkOut, checkInLabel, checkOutLabel } | { mode:'edit', stay, roomName }
-  const [form, setForm] = useState({ guests: "1", name: "", phone: "", notes: "" });
+  const [openStays, setOpenStays] = useState({}); // roomId -> { checkIn, guests, name, phone, notes }
+  const [editing, setEditing] = useState(null); // { stay, roomName } for finalized stays
+  const [editForm, setEditForm] = useState({ guests: "1", name: "", phone: "", notes: "" });
 
   const weekDates = useMemo(() => {
     const arr = [];
@@ -425,61 +425,60 @@ function ReservationsTab(props) {
     if (!p) return null;
     return guests.find((g) => g.phone === p) || null;
   };
-  const autofillFromPhone = () => {
-    const known = findGuestByPhone(form.phone);
-    if (known) setForm(Object.assign({}, form, { name: known.name, notes: known.notes || "" }));
-  };
-  const upsertGuestDirectory = (roomName, dateISO) => {
-    const phone = (form.phone || "").trim();
+  const upsertGuestDirectory = (guestData, roomName, dateISO) => {
+    const phone = (guestData.phone || "").trim();
     if (!phone) return;
-    const visit = { date: dateISO, roomName: roomName, guests: Number(form.guests) || 0 };
+    const visit = { date: dateISO, roomName: roomName, guests: Number(guestData.guests) || 0 };
     setGuests((gs) => {
       const idx = gs.findIndex((g) => g.phone === phone);
-      if (idx === -1) return gs.concat([{ id: uid(), name: form.name || "بدون نام", phone: phone, notes: form.notes || "", visits: [visit] }]);
+      if (idx === -1) return gs.concat([{ id: uid(), name: guestData.name || "بدون نام", phone: phone, notes: guestData.notes || "", visits: [visit] }]);
       const updated = gs.slice();
       const g = updated[idx];
-      updated[idx] = Object.assign({}, g, { name: form.name || g.name, notes: form.notes || g.notes, visits: (g.visits || []).concat([visit]) });
+      updated[idx] = Object.assign({}, g, { name: guestData.name || g.name, notes: guestData.notes || g.notes, visits: (g.visits || []).concat([visit]) });
       return updated;
     });
   };
+
+  const updateOpenField = (roomId, field, value) => setOpenStays((o) => Object.assign({}, o, { [roomId]: Object.assign({}, o[roomId], { [field]: value }) }));
+  const autofillOpenFromPhone = (roomId) => {
+    const known = findGuestByPhone(openStays[roomId].phone);
+    if (known) updateOpenField(roomId, "name", known.name), updateOpenField(roomId, "notes", known.notes || "");
+  };
+  const cancelOpenStay = (roomId) => setOpenStays((o) => { const n = Object.assign({}, o); delete n[roomId]; return n; });
 
   const onCellClick = (room, d) => {
     const dateISO = isoLocal(d);
     const occupied = stayAt(room.id, dateISO);
     if (occupied) {
-      setSelected({ mode: "edit", stay: occupied, roomName: room.name });
-      setForm({ guests: String(occupied.guests || 1), name: occupied.name || "", phone: occupied.phone || "", notes: occupied.notes || "" });
+      setEditing({ stay: occupied, roomName: room.name });
+      setEditForm({ guests: String(occupied.guests || 1), name: occupied.name || "", phone: occupied.phone || "", notes: occupied.notes || "" });
       return;
     }
-    const pending = pendingCheckin[room.id];
-    if (pending) {
-      if (pending === dateISO) { setPendingCheckin((p) => Object.assign({}, p, { [room.id]: null })); return; }
-      if (dateISO > pending) {
-        setSelected({ mode: "new", roomId: room.id, roomName: room.name, checkIn: pending, checkOut: dateISO, checkInLabel: jalaliLabel(new Date(pending + "T00:00:00")), checkOutLabel: jalaliLabel(d) });
-        setForm({ guests: "1", name: "", phone: "", notes: "" });
-        setPendingCheckin((p) => Object.assign({}, p, { [room.id]: null }));
+    const open = openStays[room.id];
+    if (open) {
+      if (open.checkIn === dateISO) { cancelOpenStay(room.id); return; }
+      if (dateISO > open.checkIn) {
+        const stay = { id: uid(), roomId: room.id, checkIn: open.checkIn, checkOut: dateISO, guests: Number(open.guests) || 1, name: open.name, phone: open.phone, notes: open.notes, settled: false };
+        setStays((s) => s.concat([stay]));
+        upsertGuestDirectory(open, room.name, open.checkIn);
+        cancelOpenStay(room.id);
         return;
       }
-      setPendingCheckin((p) => Object.assign({}, p, { [room.id]: dateISO }));
+      setOpenStays((o) => Object.assign({}, o, { [room.id]: Object.assign({}, open, { checkIn: dateISO }) }));
       return;
     }
-    setPendingCheckin((p) => Object.assign({}, p, { [room.id]: dateISO }));
+    setOpenStays((o) => Object.assign({}, o, { [room.id]: { checkIn: dateISO, guests: "1", name: "", phone: "", notes: "" } }));
   };
 
-  const saveNewStay = () => {
-    const stay = { id: uid(), roomId: selected.roomId, checkIn: selected.checkIn, checkOut: selected.checkOut, guests: Number(form.guests) || 1, name: form.name, phone: form.phone, notes: form.notes, settled: false };
-    setStays((s) => s.concat([stay]));
-    upsertGuestDirectory(selected.roomName, selected.checkIn);
-    setSelected(null);
-  };
   const saveEditStay = () => {
-    setStays((s) => s.map((x) => x.id === selected.stay.id ? Object.assign({}, x, { guests: Number(form.guests) || 1, name: form.name, phone: form.phone, notes: form.notes }) : x));
-    upsertGuestDirectory(selected.roomName, selected.stay.checkIn);
-    setSelected(null);
+    setStays((s) => s.map((x) => x.id === editing.stay.id ? Object.assign({}, x, { guests: Number(editForm.guests) || 1, name: editForm.name, phone: editForm.phone, notes: editForm.notes }) : x));
+    upsertGuestDirectory(editForm, editing.roomName, editing.stay.checkIn);
+    setEditing(null);
   };
-  const cancelStay = () => { setStays((s) => s.filter((x) => x.id !== selected.stay.id)); setSelected(null); };
+  const cancelFinalizedStay = () => { setStays((s) => s.filter((x) => x.id !== editing.stay.id)); setEditing(null); };
 
   const weekLabel = jalaliLabel(weekDates[0]) + " تا " + jalaliLabel(weekDates[6]);
+  const openRoomIds = Object.keys(openStays);
 
   return h(React.Fragment, null,
     h(Niche, { style: { marginBottom: 14 } },
@@ -498,7 +497,7 @@ function ReservationsTab(props) {
       ))
     ),
     h(Niche, null,
-      h(SectionTitle, { eyebrow: "تقویم ورود/خروج", title: "یک‌بار کلیک = ورود، کلیک دوم روی روز بعدی = خروج" }),
+      h(SectionTitle, { eyebrow: "تقویم ورود/خروج", title: "کلیک اول = ورود (فرم زیر باز می‌شود)، کلیک دوم روی روز بعدی = خروج" }),
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 } },
         h("button", { style: Object.assign({}, btnStyle, { padding: "5px 10px", fontSize: 11 }), onClick: () => setWeekStart((w) => { const n = new Date(w); n.setDate(w.getDate() - 7); return n; }) }, "◀ هفتهٔ قبل"),
         h("div", { style: { fontSize: 12.5, fontWeight: 700, color: C.ink } }, weekLabel),
@@ -512,21 +511,17 @@ function ReservationsTab(props) {
             weekDates.map((d, di) => {
               const dateISO = isoLocal(d);
               const stay = stayAt(r.id, dateISO);
-              const isPending = pendingCheckin[r.id] === dateISO;
-              const co = checkoutHereFrom(r.id, dateISO);
-              let label, bg, fg;
-              if (stay) {
-                label = (stay.checkIn === dateISO ? "ورود " : "") + stay.guests + " نفر" + (stay.name ? " - " + stay.name.split(" ")[0] : "");
-                bg = C.claySoft; fg = "#fff";
-              } else if (isPending) {
-                label = "ورود ✓"; bg = C.gold; fg = "#fff";
-              } else if (co) {
-                label = "خروج / خالی"; bg = C.sandDark; fg = C.inkSoft;
-              } else {
-                label = "خالی"; bg = C.sandDark; fg = C.inkSoft;
-              }
+              const departing = checkoutHereFrom(r.id, dateISO);
+              const open = openStays[r.id] && openStays[r.id].checkIn === dateISO;
+              const lines = [];
+              if (departing) lines.push(h("div", { key: "out", style: { color: C.pomegranate, fontWeight: 700 } }, "خروج " + (departing.name ? departing.name.split(" ")[0] : "")));
+              if (stay) lines.push(h("div", { key: "in", style: { color: "#fff" } }, (stay.checkIn === dateISO ? "ورود " : "") + stay.guests + " نفر" + (stay.name ? " " + stay.name.split(" ")[0] : "")));
+              else if (open) lines.push(h("div", { key: "pending", style: { color: "#fff" } }, "ورود ✓"));
+              else if (!departing) lines.push(h("div", { key: "empty" }, "خالی"));
+              let bg = C.sandDark;
+              if (stay) bg = C.claySoft; else if (open) bg = C.gold;
               return h("td", { key: di, style: { padding: 4, textAlign: "center" } },
-                h("button", { onClick: () => onCellClick(r, d), style: { border: "none", cursor: "pointer", borderRadius: 8, padding: "6px 4px", width: 70, background: bg, color: fg, fontSize: 10 } }, label)
+                h("button", { onClick: () => onCellClick(r, d), style: { border: "none", cursor: "pointer", borderRadius: 8, padding: "6px 4px", width: 74, minHeight: 40, background: bg, color: C.inkSoft, fontSize: 9.5, lineHeight: 1.3 } }, lines)
               );
             })
           )))
@@ -540,27 +535,42 @@ function ReservationsTab(props) {
         )
       )
     ),
-    selected ? h(Niche, { style: { marginTop: 14 } },
+
+    openRoomIds.map((rid) => {
+      const room = rooms.find((r) => r.id === rid);
+      const o = openStays[rid];
+      const known = findGuestByPhone(o.phone);
+      return h(Niche, { key: rid, style: { marginTop: 14, border: "1px solid " + C.gold } },
+        h(SectionTitle, { eyebrow: (room ? room.name : "") + " — ورود: " + jalaliLabel(new Date(o.checkIn + "T00:00:00")), title: "مشخصات مهمان (هنوز خروج مشخص نشده — روی یک روز دیگر بزنید)" }),
+        h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+          h("input", { style: Object.assign({}, inputStyle, { width: 70 }), placeholder: "تعداد نفر", value: o.guests, onChange: (e) => updateOpenField(rid, "guests", e.target.value) }),
+          h("input", { style: inputStyle, placeholder: "نام مهمان", value: o.name, onChange: (e) => updateOpenField(rid, "name", e.target.value) }),
+          h("input", { style: inputStyle, placeholder: "شماره تماس", value: o.phone, onChange: (e) => updateOpenField(rid, "phone", e.target.value) }),
+          known ? h("button", { onClick: () => autofillOpenFromPhone(rid), style: { ...btnStyle, background: C.sage } }, "مهمان قبلی — پر کن") : null
+        ),
+        known ? h("div", { style: { fontSize: 11, color: C.sage, marginTop: 6 } }, "این مهمان قبلاً " + (known.visits || []).length + " بار اومده.") : null,
+        h("textarea", { style: { ...inputStyle, width: "100%", marginTop: 8, minHeight: 50, fontFamily: "inherit" }, placeholder: "علاقه‌مندی‌ها و نکات", value: o.notes, onChange: (e) => updateOpenField(rid, "notes", e.target.value) }),
+        h("div", { style: { display: "flex", gap: 6, marginTop: 10 } },
+          h("button", { style: Object.assign({}, btnStyle, { background: C.pomegranate }), onClick: () => cancelOpenStay(rid) }, "انصراف از این ورود")
+        )
+      );
+    }),
+
+    editing ? h(Niche, { style: { marginTop: 14 } },
       h(SectionTitle, {
-        eyebrow: selected.roomName + " — " + (selected.mode === "new" ? (selected.checkInLabel + " تا " + selected.checkOutLabel) : (jalaliLabel(new Date(selected.stay.checkIn + "T00:00:00")) + " تا " + jalaliLabel(new Date(selected.stay.checkOut + "T00:00:00")))),
-        title: selected.mode === "new" ? "ثبت رزرو جدید" : "جزئیات رزرو"
+        eyebrow: editing.roomName + " — " + jalaliLabel(new Date(editing.stay.checkIn + "T00:00:00")) + " تا " + jalaliLabel(new Date(editing.stay.checkOut + "T00:00:00")),
+        title: "جزئیات رزرو"
       }),
       h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
-        h("input", { style: Object.assign({}, inputStyle, { width: 70 }), placeholder: "تعداد نفر", value: form.guests, onChange: (e) => setForm(Object.assign({}, form, { guests: e.target.value })) }),
-        h("input", { style: inputStyle, placeholder: "نام مهمان", value: form.name, onChange: (e) => setForm(Object.assign({}, form, { name: e.target.value })) }),
-        h("input", { style: inputStyle, placeholder: "شماره تماس", value: form.phone, onChange: (e) => setForm(Object.assign({}, form, { phone: e.target.value })) }),
-        findGuestByPhone(form.phone) ? h("button", { onClick: autofillFromPhone, style: { ...btnStyle, background: C.sage } }, "مهمان قبلی — پر کن") : null
+        h("input", { style: Object.assign({}, inputStyle, { width: 70 }), placeholder: "تعداد نفر", value: editForm.guests, onChange: (e) => setEditForm(Object.assign({}, editForm, { guests: e.target.value })) }),
+        h("input", { style: inputStyle, placeholder: "نام مهمان", value: editForm.name, onChange: (e) => setEditForm(Object.assign({}, editForm, { name: e.target.value })) }),
+        h("input", { style: inputStyle, placeholder: "شماره تماس", value: editForm.phone, onChange: (e) => setEditForm(Object.assign({}, editForm, { phone: e.target.value })) })
       ),
-      findGuestByPhone(form.phone) ? h("div", { style: { fontSize: 11, color: C.sage, marginTop: 6 } }, "این مهمان قبلاً " + (findGuestByPhone(form.phone).visits || []).length + " بار اومده.") : null,
-      h("textarea", { style: { ...inputStyle, width: "100%", marginTop: 8, minHeight: 50, fontFamily: "inherit" }, placeholder: "علاقه‌مندی‌ها و نکات برای دفعهٔ بعد", value: form.notes, onChange: (e) => setForm(Object.assign({}, form, { notes: e.target.value })) }),
+      h("textarea", { style: { ...inputStyle, width: "100%", marginTop: 8, minHeight: 50, fontFamily: "inherit" }, placeholder: "علاقه‌مندی‌ها و نکات", value: editForm.notes, onChange: (e) => setEditForm(Object.assign({}, editForm, { notes: e.target.value })) }),
       h("div", { style: { display: "flex", gap: 6, marginTop: 10 } },
-        selected.mode === "new"
-          ? h("button", { style: btnStyle, onClick: saveNewStay }, "ذخیره رزرو")
-          : h(React.Fragment, null,
-              h("button", { style: btnStyle, onClick: saveEditStay }, "ذخیره تغییرات"),
-              h("button", { style: Object.assign({}, btnStyle, { background: C.pomegranate }), onClick: cancelStay }, "لغو این رزرو")
-            ),
-        h("button", { style: Object.assign({}, btnStyle, { background: C.inkSoft }), onClick: () => setSelected(null) }, "بستن")
+        h("button", { style: btnStyle, onClick: saveEditStay }, "ذخیره تغییرات"),
+        h("button", { style: Object.assign({}, btnStyle, { background: C.pomegranate }), onClick: cancelFinalizedStay }, "لغو این رزرو"),
+        h("button", { style: Object.assign({}, btnStyle, { background: C.inkSoft }), onClick: () => setEditing(null) }, "بستن")
       )
     ) : null
   );
