@@ -400,6 +400,8 @@ function ReservationsTab(props) {
   const [openStays, setOpenStays] = useState({}); // roomId -> { checkIn, guests, name, phone, notes }
   const [editing, setEditing] = useState(null); // { stay, roomName } for finalized stays
   const [editForm, setEditForm] = useState({ guests: "1", name: "", phone: "", notes: "" });
+  const [bulkForm, setBulkForm] = useState({ checkIn: "", checkOut: "", guests: "2", name: "", phone: "", notes: "" });
+  const [bulkMsg, setBulkMsg] = useState("");
 
   const weekDates = useMemo(() => {
     const arr = [];
@@ -445,6 +447,23 @@ function ReservationsTab(props) {
     if (known) updateOpenField(roomId, "name", known.name), updateOpenField(roomId, "notes", known.notes || "");
   };
   const cancelOpenStay = (roomId) => setOpenStays((o) => { const n = Object.assign({}, o); delete n[roomId]; return n; });
+
+  const bulkBook = () => {
+    if (!bulkForm.checkIn || !bulkForm.checkOut || bulkForm.checkOut <= bulkForm.checkIn) { setBulkMsg("تاریخ ورود و خروج را درست وارد کنید."); return; }
+    const newStays = [];
+    const skipped = [];
+    rooms.forEach((r) => {
+      const conflict = stays.some((s) => s.roomId === r.id && s.checkIn < bulkForm.checkOut && bulkForm.checkIn < s.checkOut);
+      if (conflict) { skipped.push(r.name); return; }
+      newStays.push({ id: uid(), roomId: r.id, checkIn: bulkForm.checkIn, checkOut: bulkForm.checkOut, guests: Number(bulkForm.guests) || r.capacity, name: bulkForm.name, phone: bulkForm.phone, notes: bulkForm.notes, settled: false });
+    });
+    if (newStays.length) {
+      setStays((s) => s.concat(newStays));
+      if (bulkForm.phone) upsertGuestDirectory(bulkForm, "کل اقامتگاه", bulkForm.checkIn);
+    }
+    setBulkMsg(skipped.length ? ("رزرو برای " + newStays.length + " اتاق ثبت شد. این اتاق‌ها از قبل رزرو بودن و رد شدند: " + skipped.join("، ")) : ("رزرو کل اقامتگاه (" + newStays.length + " اتاق) با موفقیت ثبت شد."));
+    setBulkForm({ checkIn: "", checkOut: "", guests: "2", name: "", phone: "", notes: "" });
+  };
 
   const onCellClick = (room, d) => {
     const dateISO = isoLocal(d);
@@ -495,6 +514,22 @@ function ReservationsTab(props) {
             )
           : h("button", { onClick: () => { setEditRoom(r.id); setPriceDraft(String(r.pricePerPerson)); }, style: { border: "none", background: "none", cursor: "pointer", fontWeight: 700, color: C.clay } }, r.pricePerPerson + " ✎")
       ))
+    ),
+    h(Niche, { style: { marginBottom: 14 } },
+      h(SectionTitle, { eyebrow: "رزرو گروهی", title: "رزرو کل اقامتگاه برای یک بازهٔ تاریخ" }),
+      h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+        h("div", null, h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "ورود"), h("input", { type: "date", style: inputStyle, value: bulkForm.checkIn, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { checkIn: e.target.value })) })),
+        h("div", null, h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "خروج"), h("input", { type: "date", style: inputStyle, value: bulkForm.checkOut, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { checkOut: e.target.value })) })),
+        h("div", null, h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "نفر در هر اتاق"), h("input", { style: { ...inputStyle, width: 80 }, value: bulkForm.guests, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { guests: e.target.value })) }))
+      ),
+      h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 } },
+        h("input", { style: inputStyle, placeholder: "نام مهمان / گروه", value: bulkForm.name, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { name: e.target.value })) }),
+        h("input", { style: inputStyle, placeholder: "شماره تماس", value: bulkForm.phone, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { phone: e.target.value })) })
+      ),
+      h("textarea", { style: { ...inputStyle, width: "100%", marginTop: 6, minHeight: 40, fontFamily: "inherit" }, placeholder: "یادداشت", value: bulkForm.notes, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { notes: e.target.value })) }),
+      h("button", { style: Object.assign({}, btnStyle, { marginTop: 8 }), onClick: bulkBook }, "رزرو همهٔ اتاق‌ها"),
+      bulkMsg ? h("div", { style: { fontSize: 11.5, color: C.sage, marginTop: 6 } }, bulkMsg) : null,
+      h("div", { style: { fontSize: 10.5, color: C.inkSoft, marginTop: 4 } }, "اگه اتاقی از قبل توی این بازه رزرو باشه، خودش رد می‌شه و بهت خبر می‌ده کدوم‌ها.")
     ),
     h(Niche, null,
       h(SectionTitle, { eyebrow: "تقویم ورود/خروج", title: "کلیک اول = ورود (فرم زیر باز می‌شود)، کلیک دوم روی روز بعدی = خروج" }),
