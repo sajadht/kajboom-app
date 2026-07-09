@@ -171,20 +171,17 @@ function colorForStay(stayId) { return STAY_COLORS[strHash(stayId) % STAY_COLORS
 function todayISO() { return isoLocal(new Date()); }
 
 
-async function callClaudeAPI(apiKey, prompt) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+async function callAIAPI(apiKey, prompt) {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + encodeURIComponent(apiKey), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true"
-    },
-    body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 500, messages: [{ role: "user", content: prompt }] })
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error.message || "خطای API");
-  return (data.content || []).map((b) => b.text || "").join("\n");
+  const cand = (data.candidates || [])[0];
+  const parts = cand && cand.content && cand.content.parts ? cand.content.parts : [];
+  return parts.map((p) => p.text || "").join("\n");
 }
 
 function AIKeyBox(props) {
@@ -194,10 +191,10 @@ function AIKeyBox(props) {
   const save = () => { setSettings({ apiKey: draft.trim() }); setOpen(false); };
   if (!open) return h("div", { style: { fontSize: 11, color: C.inkSoft, marginBottom: 10, cursor: "pointer" }, onClick: () => setOpen(true) }, "🔑 کلید API تنظیم شده — برای تغییر بزنید");
   return h(Niche, { style: { marginBottom: 14 } },
-    h(SectionTitle, { eyebrow: "تنظیمات هوش مصنوعی", title: "کلید API (Anthropic)" }),
-    h("div", { style: { fontSize: 11, color: C.inkSoft, marginBottom: 6 } }, "این کلید فقط روی همین دستگاه‌ها ذخیره می‌شود؛ لینک اپ را با کسی جز هاجر به اشتراک نگذارید."),
+    h(SectionTitle, { eyebrow: "تنظیمات هوش مصنوعی", title: "کلید API (Google Gemini — رایگان)" }),
+    h("div", { style: { fontSize: 11, color: C.inkSoft, marginBottom: 6 } }, "این کلید فقط روی همین دستگاه‌ها ذخیره می‌شود؛ لینک اپ را با کسی جز هاجر به اشتراک نگذارید. کلید رایگان را از aistudio.google.com بگیرید."),
     h("div", { style: { display: "flex", gap: 6 } },
-      h("input", { style: { ...inputStyle, flex: 1 }, placeholder: "sk-ant-...", value: draft, onChange: (e) => setDraft(e.target.value) }),
+      h("input", { style: { ...inputStyle, flex: 1 }, placeholder: "AIza...", value: draft, onChange: (e) => setDraft(e.target.value) }),
       h("button", { style: btnStyle, onClick: save }, "ذخیره")
     )
   );
@@ -1128,7 +1125,7 @@ function EventsTab(props) {
     setLoadingId(ev.id); setErrId(null);
     try {
       const prompt = "برای رویداد یک اقامتگاه سنتی بوم‌گردی در نایین (کویر ایران) با عنوان «" + ev.title + "» در فصل " + ev.season + "، سه پیشنهاد کوتاه و عملی (هرکدام یک خط، بدون شماره‌گذاری اضافه) برای برگزاری این رویداد بده. فقط به فارسی و خیلی خلاصه پاسخ بده.";
-      const text = await callClaudeAPI(settings.apiKey, prompt);
+      const text = await callAIAPI(settings.apiKey, prompt);
       setEvents((evs) => evs.map((e) => e.id === ev.id ? Object.assign({}, e, { aiSuggestion: text }) : e));
     } catch (err) {
       setEvents((evs) => evs.map((e) => e.id === ev.id ? Object.assign({}, e, { aiSuggestion: "خطا: " + err.message }) : e));
@@ -1178,7 +1175,7 @@ function GrowthTab(props) {
     try {
       const prevTitles = suggestions.map((s) => s.title).join("، ") || "هیچ‌کدام";
       const prompt = "برای صاحبان یک اقامتگاه سنتی بوم‌گردی در نایین (کویر ایران)، یک پیشنهاد فیلم و یک پیشنهاد کتاب مرتبط با فرهنگ، مهمان‌نوازی، کویر یا توسعهٔ فردی بده. این عناوین قبلاً پیشنهاد شده‌اند و نباید تکرار شوند: " + prevTitles + ". پاسخ را دقیقاً به این شکل و فقط دو خط بده:\nفیلم: <نام فیلم> - <یک جملهٔ کوتاه دلیل پیشنهاد>\nکتاب: <نام کتاب> - <یک جملهٔ کوتاه دلیل پیشنهاد>";
-      const text = await callClaudeAPI(settings.apiKey, prompt);
+      const text = await callAIAPI(settings.apiKey, prompt);
       const lines = text.split("\n").filter((l) => l.trim());
       const newItems = [];
       lines.forEach((line) => {
